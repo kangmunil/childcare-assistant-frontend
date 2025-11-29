@@ -1,3 +1,15 @@
+import React from 'react';
+import { Milk, Moon, Activity, Plus, ChevronRight, BookOpen, Droplet } from 'lucide-react';
+import TrackerCard from '../components/TrackerCard'; 
+import useStore from '../store/useStore';
+import { useNavigate } from 'react-router-dom';
+
+const DashboardPage = () => {
+  const { children, activeChildId } = useStore();
+  const navigate = useNavigate();
+  const currentChild = children.find(c => c.id === activeChildId) || children[0];
+
+  // 1. 요약 데이터
 import React, { useState } from 'react';
 import { Milk, Moon, Activity, Plus, Bell, ChevronRight, BookOpen, Droplet, X, Baby, Calendar as CalendarIcon } from 'lucide-react';
 import TrackerCard from '../components/TrackerCard'; 
@@ -41,24 +53,28 @@ const DashboardPage = () => {
     { id: 4, title: 'Diaper', subtitle: '기저귀', value: '6', unit: '회', themeColor: 'sky', icon: Activity },
   ];
 
+  // 2. 일정 데이터
   const scheduleData = [
     { time: '14:00', title: '2차 영유아 검진', location: '소아과', type: 'hospital' },
     { time: '16:00', title: '이유식 재료 주문', location: '쿠팡', type: 'shopping' },
     { time: '18:00', title: '친정 부모님 방문', location: '집', type: 'family' },
   ];
 
+  // 3. D-Day 계산 헬퍼
   // D-Day 계산 헬퍼
   const getDays = (dateString) => {
       const today = new Date();
       const birth = new Date(dateString);
       const diff = today - birth;
       const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      return days > 0 ? days : 1; 
       return days > 0 ? days : 1; // 태어난 날은 1일
   };
 
   return (
     <div className="pb-24 md:pb-0 h-full flex flex-col relative">
       
+      {/* Compact Hero Card */}
       {/* 1. Header & Child Tabs */}
       <header className="flex justify-between items-center mb-6 px-1 shrink-0">
         <div>
@@ -121,6 +137,13 @@ const DashboardPage = () => {
             </div>
             
             <div className="hidden md:flex gap-2">
+                <button 
+                    onClick={() => navigate('/record')}
+                    
+                    className="bg-white text-orange-500 px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-black/5 hover:bg-orange-50 transition-colors flex items-center gap-2"
+                >
+                    <Plus className="w-4 h-4" strokeWidth={3} />
+                    <span>성장 기록</span>
                 <button className="bg-white text-orange-500 px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-black/5 hover:bg-orange-50 transition-colors flex items-center gap-2">
                     <Plus className="w-4 h-4" strokeWidth={3} /> 기록
                 </button>
@@ -162,6 +185,7 @@ const DashboardPage = () => {
                             </div>
                         ))}
                          <div className="p-4 text-center text-xs text-gray-300 font-medium border-t border-dashed border-gray-100 mt-2">
+                            일정이 더 없어요
                             일정이 더 없어요 🎉
                         </div>
                     </div>
