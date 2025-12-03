@@ -13,45 +13,58 @@ const useStore = create(
       user: null,        
 
       // ==========================================
-      // 2. 자녀 데이터 (초기 더미 데이터)
+      // 2. 자녀 데이터
       // ==========================================
       children: [
-        { 
-          id: 1, 
-          name: '지우', 
-          birthDate: '2025-06-20', 
-          gender: 'female', 
-          photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Jiu' 
-        },
-        { 
-          id: 2, 
-          name: '서준', 
-          birthDate: '2022-01-15', 
-          gender: 'male', 
-          photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Jun' 
-        },
+        { id: 1, name: '지우', birthDate: '2025-06-20', gender: 'female', photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Jiu' },
+        { id: 2, name: '서준', birthDate: '2022-01-15', gender: 'male', photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Jun' },
       ],
       activeChildId: 1,
 
       // ==========================================
-      // 3. 채팅 관련 상태
+      // 3. 성장 기록 데이터
+      // ==========================================
+      growthRecords: [
+        { month: 0, height: 50, weight: 3.2 },
+        { month: 1, height: 54, weight: 4.5 },
+        { month: 2, height: 58, weight: 5.8 },
+        { month: 3, height: 61, weight: 6.7 },
+      ],
+
+      // ==========================================
+      // 4. 캘린더 일정 데이터
+      // ==========================================
+      events: [
+        { id: 1, date: '2025-12-03', title: 'B형 간염 2차 접종', type: 'hospital', time: '14:00', location: '서울 소아과', description: '' },
+        { id: 2, date: '2025-12-03', title: '이유식 재료 사기', type: 'todo', time: '16:00', location: '마트', description: '' },
+        { id: 3, date: '2025-12-25', title: '크리스마스 파티', type: 'event', time: '18:00', location: '집', description: '' },
+      ],
+
+      // ==========================================
+      // 5. 알림 데이터
+      // ==========================================
+      notifications: [
+        { id: 1, type: 'schedule', message: '오늘 오후 2시 B형 간염 접종이 있어요 💉', time: '방금 전', isRead: false },
+        { id: 2, type: 'info', message: '지우의 키가 상위 10%에 진입했어요! 🚀', time: '1시간 전', isRead: false },
+        { id: 3, type: 'alert', message: '수유 텀이 4시간을 지났어요 ⏰', time: '2시간 전', isRead: true },
+      ],
+
+      // ==========================================
+      // 6. 채팅 데이터
       // ==========================================
       messages: [
-        { id: 1, role: 'ai', text: '안녕하세요! 육아에 대한 궁금한 점이 있으신가요? 무엇이든 물어보세요! 😊' }
+        { id: 1, role: 'ai', text: '안녕하세요! 육아에 대한 궁금한 점이 있으신가요?' }
       ],
       isAiThinking: false, 
 
       // ==========================================
-      // 4. 액션 (기능 함수들)
+      // 7. 액션 (기능 함수들)
       // ==========================================
-      
-      // 기본 UI 액션
       setActivePage: (page) => set({ activePage: page }),
       toggleChat: () => set((state) => ({ isChatOpen: !state.isChatOpen })),
-      setIsChatOpen: (isOpen) => set({ isChatOpen: isOpen }),
       setActiveChild: (id) => set({ activeChildId: id }),
-
-      // 자녀 추가 기능
+      
+      // 자녀 추가
       addChild: (newChild) => set((state) => {
         const id = state.children.length + 1; 
         const photo = `https://api.dicebear.com/7.x/avataaars/svg?seed=${newChild.name}`; 
@@ -60,74 +73,36 @@ const useStore = create(
           activeChildId: id, 
         };
       }),
-      
-      // 소셜 로그인 시뮬레이션
-      socialLogin: async (provider) => {
-          try {
-              console.log(`[API 요청] POST /api/auth/${provider}`); 
-              await new Promise(resolve => setTimeout(resolve, 1000));
-              const fakeResponse = {
-                  token: "abc12345",
-                  user: {
-                      name: "지우맘",
-                      email: `test@${provider}.com`
-                  }
-              };
-              set({ isLoggedIn: true, user: fakeResponse.user });
-              return true; 
-          } catch (error) {
-              console.error("로그인 실패:", error);
-              return false; 
-          }
-      },
 
-      logout: () => {
-          console.log("[API 요청] 로그아웃");
-          set({ 
-            isLoggedIn: false, 
-            user: null, 
-            activePage: 'dashboard' 
-          });
-      },
-
-      // 사용자 메시지 추가
-      addUserMessage: (text) => set((state) => ({
-        messages: [...state.messages, { id: Date.now(), role: 'user', text }]
+      // 성장 기록 추가
+      addGrowthRecord: (newRecord) => set((state) => ({
+        growthRecords: [...state.growthRecords, newRecord].sort((a, b) => a.month - b.month)
       })),
 
-      // AI 답변 생성 (스트리밍 효과)
-      generateAiResponse: async () => {
-        // 1) 생각하는 척 (로딩 시작)
-        set({ isAiThinking: true });
-        await new Promise(r => setTimeout(r, 1000)); // 1초 대기
-        set({ isAiThinking: false }); // 로딩 끝
+      // 일정 추가
+      addEvent: (newEvent) => set((state) => ({
+        events: [...state.events, newEvent]
+      })),
+      markAsRead: (id) => set((state) => ({
+        notifications: state.notifications.map(n => 
+          n.id === id ? { ...n, isRead: true } : n
+        )
+      })),
 
-        // 2) 답변 준비
-        const fullAnswer = "아기가 열이 날 때는 당황하지 마시고 체온을 먼저 확인해주세요. 38도 이상이라면 미온수 마사지를 해주시고, 해열제 교차 복용을 고려해보세요. 증상이 지속되면 꼭 병원을 방문하셔야 합니다.";
-        
-        // 3) 빈 말풍선 먼저 추가
-        const aiMsgId = Date.now();
-        set((state) => ({
-             messages: [...state.messages, { id: aiMsgId, role: 'ai', text: '' }]
-        }));
+      clearNotifications: () => set({ notifications: [] }),
 
-        // 4) 한 글자씩 타닥타닥 채워넣기
-        let currentText = '';
-        for (let i = 0; i < fullAnswer.length; i++) {
-            currentText += fullAnswer[i];
-            
-            set((state) => ({
-                messages: state.messages.map(msg => 
-                    msg.id === aiMsgId ? { ...msg, text: currentText } : msg
-                )
-            }));
-
-            await new Promise(r => setTimeout(r, 30)); 
-        }
-      },
+      // 기타 기능
+      logout: () => set({ isLoggedIn: false, user: null, activePage: 'dashboard' }),
+      addUserMessage: (text) => set((state) => ({ messages: [...state.messages, { id: Date.now(), role: 'user', text }] })),
+      generateAiResponse: async () => { 
+          set({ isAiThinking: true });
+          await new Promise(r => setTimeout(r, 1000));
+          set({ isAiThinking: false });
+          // ... (이후 로직은 컴포넌트나 여기서 처리 가능)
+      }
     }),
     {
-      name: 'bebehelper-storage', // 로컬 스토리지에 저장 (새로고침 해도 데이터 유지됨)
+      name: 'bebehelper-storage',
     }
   )
 );

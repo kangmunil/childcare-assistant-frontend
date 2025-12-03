@@ -1,13 +1,18 @@
-// src/components/Header.jsx
 import React, { useState } from 'react';
-import { Plus, Bell, X, Baby, Calendar as CalendarIcon } from 'lucide-react';
+import { Plus, Bell, X, Baby } from 'lucide-react';
 import useStore from '../store/useStore';
+import NotificationDropdown from './NotificationDropdown'; // ★ 알림창 불러오기
 
 const Header = () => {
-  const { children, activeChildId, setActiveChild, addChild } = useStore();
+  const { children, activeChildId, setActiveChild, addChild, notifications } = useStore();
   
-  // 모달 상태와 로직을 여기로 가져옴
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isNotiOpen, setIsNotiOpen] = useState(false); // ★ 알림창 열림/닫힘 상태
+
+  // 읽지 않은 알림 개수 계산 (안전장치 추가)
+  const safeNotifications = notifications || [];
+  const unreadCount = safeNotifications.filter(n => !n.isRead).length;
+
   const [newChildName, setNewChildName] = useState('');
   const [newChildDate, setNewChildDate] = useState('');
   const [newChildGender, setNewChildGender] = useState('female');
@@ -31,7 +36,7 @@ const Header = () => {
 
   return (
     <>
-      <header className="flex justify-between items-center mb-6 px-1 shrink-0">
+      <header className="flex justify-between items-center mb-6 px-1 shrink-0 relative z-40">
         <div>
             <div className="flex gap-2 mb-2 flex-wrap">
                 {children.map(child => (
@@ -62,13 +67,28 @@ const Header = () => {
                 {currentChild ? `${currentChild.name}맘님, 환영해요!` : '아이를 등록해주세요!'}
             </h1>
         </div>
-        <div className="bg-white p-2.5 rounded-full shadow-sm border border-gray-100 cursor-pointer hover:bg-gray-50 relative group">
-            <Bell className="w-5 h-5 text-gray-400 group-hover:text-amber-500 transition-colors" />
-            <div className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border border-white"></div>
+
+        {/* ★ [여기가 핵심] 클릭 가능한 버튼으로 변경됨 */}
+        <div className="relative">
+            <button 
+                onClick={() => setIsNotiOpen(!isNotiOpen)} // 클릭하면 열리고 닫힘
+                className={`p-2.5 rounded-full shadow-sm border transition-all ${
+                    isNotiOpen ? 'bg-amber-50 border-amber-200 text-amber-500' : 'bg-white border-gray-100 text-gray-400 hover:bg-gray-50'
+                }`}
+            >
+                <Bell className="w-5 h-5" />
+                {/* 빨간 점 (읽지 않은 알림 있을 때만) */}
+                {unreadCount > 0 && (
+                    <div className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border border-white"></div>
+                )}
+            </button>
+
+            {/* 알림 드롭다운 */}
+            {isNotiOpen && <NotificationDropdown onClose={() => setIsNotiOpen(false)} />}
         </div>
       </header>
 
-      {/* 모달 (Header 레벨에서 관리되어야 어디서든 뜸) */}
+      {/* 자녀 추가 모달 */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
             <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-sm p-6 relative border border-white/50">
@@ -102,16 +122,13 @@ const Header = () => {
 
                     <div>
                         <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">생년월일</label>
-                        <div className="relative">
-                            <input 
-                                type="date" 
-                                value={newChildDate}
-                                onChange={(e) => setNewChildDate(e.target.value)}
-                                className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-300 transition-all text-gray-700"
-                                required
-                            />
-                            <CalendarIcon className="absolute right-4 top-3.5 w-4 h-4 text-gray-400 pointer-events-none" />
-                        </div>
+                        <input 
+                            type="date" 
+                            value={newChildDate}
+                            onChange={(e) => setNewChildDate(e.target.value)}
+                            className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-300 transition-all text-gray-700"
+                            required
+                        />
                     </div>
 
                     <div>
