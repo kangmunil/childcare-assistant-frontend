@@ -1,66 +1,135 @@
-import React, { useState } from 'react';
-import { Bot, X, Send, MessageCircle } from 'lucide-react';
-// 1. 스토어 import (필수)
+import React, { useState, useRef, useEffect } from 'react';
+import { X, Send, MessageCircle, Bot, Minimize2 } from 'lucide-react';
 import useStore from '../store/useStore';
 
+// 1. 채팅창 컴포넌트 (메인)
 const ChatWindow = () => {
-    // 2. 스토어에서 상태와 함수 가져오기
-    const { setIsChatOpen } = useStore();
+  const { isChatOpen, toggleChat, messages, addUserMessage, generateAiResponse, isAiThinking } = useStore();
+  const [inputText, setInputText] = useState('');
+  const messagesEndRef = useRef(null);
+
+  // 메시지 올 때마다 스크롤 맨 아래로 이동
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isAiThinking]);
+
+  // 엔터키 전송
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  const handleSendMessage = () => {
+    if (!inputText.trim()) return;
     
-    const [messages] = useState([
-        { id: 1, sender: 'bot', text: '안녕하세요! 육아 궁금증을 해결해 드릴게요. 👶' },
-        { id: 2, sender: 'user', text: '신생아 수면 시간이 보통 몇 시간이야?' },
-        { id: 3, sender: 'bot', text: '신생아(0~3개월)는 하루 평균 14~17시간 정도 잠을 잡니다! 😴' },
-    ]);
+    // 1. 유저 메시지 등록
+    addUserMessage(inputText);
+    setInputText('');
+    
+    // 2. AI 응답 트리거
+    generateAiResponse();
+  };
 
-    return (
-        <div className="fixed bottom-24 right-6 w-[85%] max-w-[360px] bg-white/90 backdrop-blur-xl rounded-[2rem] shadow-2xl border border-white/60 overflow-hidden z-50 animate-slide-up md:right-12 md:bottom-12">
-            <div className="bg-gradient-to-r from-amber-400 to-orange-400 p-5 flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                    <div className="bg-white/20 p-2 rounded-full backdrop-blur-sm"><Bot className="w-5 h-5 text-white" /></div>
-                    <div>
-                        <span className="text-white font-black text-base block">AI 육아 닥터</span>
-                        <span className="text-white/80 text-xs font-medium">24시간 대기중</span>
-                    </div>
-                </div>
-                {/* 닫기 버튼 연결 */}
-                <button onClick={() => setIsChatOpen(false)} className="text-white/80 hover:text-white bg-white/10 p-1 rounded-full"><X className="w-5 h-5" /></button>
-            </div>
-            
-            <div className="h-80 overflow-y-auto p-5 bg-slate-50/50 space-y-4 custom-scrollbar">
-                {messages.map((msg) => (
-                    <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] p-4 rounded-2xl text-sm leading-relaxed shadow-sm ${
-                            msg.sender === 'user' 
-                            ? 'bg-amber-500 text-white rounded-tr-none font-medium' 
-                            : 'bg-white text-gray-700 border border-gray-100 rounded-tl-none'
-                        }`}>
-                            {msg.text}
-                        </div>
-                    </div>
-                ))}
-            </div>
-            
-            <div className="p-4 bg-white border-t border-gray-100 flex gap-2">
-                <input type="text" placeholder="궁금한 점을 물어보세요" className="flex-1 bg-gray-50 rounded-full px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-200 transition-all text-gray-700 placeholder-gray-400" />
-                <button className="bg-amber-500 w-12 h-12 rounded-full flex items-center justify-center text-white hover:bg-amber-600 shadow-lg shadow-amber-200 transition-all hover:scale-105"><Send className="w-5 h-5 ml-0.5" /></button>
-            </div>
-        </div>
-    );
-};
-
-export const FloatingChatButton = () => {
-  // 3. 파라미터({ isChatOpen... })를 지우고, 스토어에서 직접 가져옵니다.
-  const { isChatOpen, toggleChat } = useStore();
+  if (!isChatOpen) return null;
 
   return (
-    <button 
-      onClick={toggleChat} // 4. 스토어의 toggle 함수 실행
-      className={`fixed bottom-6 right-6 w-16 h-16 rounded-full shadow-2xl shadow-amber-300/50 flex items-center justify-center transition-all duration-300 z-40 hover:scale-110 md:bottom-10 md:right-10 ${isChatOpen ? 'bg-gray-800 rotate-90' : 'bg-gradient-to-tr from-amber-400 to-orange-500'}`}
-    >
-      {isChatOpen ? (<X className="w-7 h-7 text-white" />) : (<MessageCircle className="w-8 h-8 text-white fill-white/20" />)}
-    </button>
+    <div className="fixed bottom-24 right-4 z-50 w-[90%] max-w-[360px] h-[500px] bg-white rounded-[2rem] shadow-2xl border border-indigo-50 flex flex-col overflow-hidden animate-fade-in-up">
+      
+      {/* 헤더 */}
+      <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-4 flex justify-between items-center text-white shrink-0">
+        <div className="flex items-center gap-2">
+            <div className="bg-white/20 p-1.5 rounded-full">
+                <Bot className="w-5 h-5" />
+            </div>
+            <div>
+                <h3 className="font-bold text-sm">AI 육아 도우미</h3>
+                <p className="text-[10px] text-indigo-100 opacity-80">무엇이든 물어보세요!</p>
+            </div>
+        </div>
+        <button onClick={toggleChat} className="p-2 hover:bg-white/20 rounded-full transition-colors">
+          <Minimize2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* 메시지 영역 */}
+      <div className="flex-1 overflow-y-auto p-4 bg-slate-50 space-y-4">
+        {messages.map((msg) => (
+          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[80%] p-3 rounded-2xl text-sm leading-relaxed shadow-sm ${
+              msg.role === 'user' 
+                ? 'bg-indigo-600 text-white rounded-tr-none' 
+                : 'bg-white text-gray-700 border border-gray-100 rounded-tl-none'
+            }`}>
+              {msg.text}
+            </div>
+          </div>
+        ))}
+        
+        {/* 생각 중... 애니메이션 */}
+        {isAiThinking && (
+           <div className="flex justify-start">
+             <div className="bg-white p-3 rounded-2xl rounded-tl-none border border-gray-100 shadow-sm flex gap-1.5 items-center">
+                <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></div>
+                <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+             </div>
+           </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* 입력창 */}
+      <div className="p-3 bg-white border-t border-gray-100 shrink-0">
+        <div className="flex gap-2 items-center bg-gray-50 px-4 py-2 rounded-full border border-gray-200 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100 transition-all">
+            <input 
+                type="text" 
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={handleKeyPress}
+                placeholder="궁금한 육아 정보를 입력하세요..."
+                className="flex-1 bg-transparent border-none outline-none text-sm placeholder:text-gray-400"
+            />
+            <button 
+                onClick={handleSendMessage}
+                disabled={!inputText.trim()}
+                className={`p-1.5 rounded-full transition-colors ${
+                    inputText.trim() ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-200 text-gray-400'
+                }`}
+            >
+                <Send className="w-4 h-4 ml-0.5" />
+            </button>
+        </div>
+      </div>
+    </div>
   );
+};
+
+// 2. 둥둥 떠있는 버튼 컴포넌트 (Named Export)
+export const FloatingChatButton = () => {
+    const { toggleChat, isChatOpen } = useStore();
+
+    // 채팅창이 열려있으면 버튼 숨김 (모바일 UX 고려)
+    if (isChatOpen) return null;
+
+    return (
+        <button 
+            onClick={toggleChat}
+            className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-tr from-indigo-600 to-purple-600 text-white rounded-full shadow-lg shadow-indigo-300 flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-40 group"
+        >
+            <MessageCircle className="w-7 h-7 group-hover:rotate-12 transition-transform" />
+            
+            {/* 툴팁 */}
+            <span className="absolute right-full mr-3 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs py-1.5 px-3 rounded-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                AI 육아상담
+            </span>
+        </button>
+    );
 };
 
 export default ChatWindow;

@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom'; // 페이지 이동 훅 추가
 import { Milk, Moon, Activity, Plus, Bell, ChevronRight, BookOpen, Droplet, X, Baby, Calendar as CalendarIcon } from 'lucide-react';
 import TrackerCard from '../components/TrackerCard'; 
 import useStore from '../store/useStore';
 
 const DashboardPage = () => {
   const { children, activeChildId, setActiveChild, addChild } = useStore();
+  const navigate = useNavigate(); // navigate 함수 생성
   
   // 모달 열림/닫힘 상태 관리
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -33,7 +35,7 @@ const DashboardPage = () => {
     setIsModalOpen(false);
   };
 
-  // ... (기존 데이터 로직 유지)
+  // 1. 요약 데이터
   const summaryData = [
     { id: 1, title: 'Feeding', subtitle: '모유/분유', value: '850', unit: 'ml', themeColor: 'amber', icon: Milk },
     { id: 2, title: 'Pumping', subtitle: '유축량', value: '120', unit: 'ml', themeColor: 'emerald', icon: Droplet },
@@ -41,13 +43,14 @@ const DashboardPage = () => {
     { id: 4, title: 'Diaper', subtitle: '기저귀', value: '6', unit: '회', themeColor: 'sky', icon: Activity },
   ];
 
+  // 2. 일정 데이터
   const scheduleData = [
     { time: '14:00', title: '2차 영유아 검진', location: '소아과', type: 'hospital' },
     { time: '16:00', title: '이유식 재료 주문', location: '쿠팡', type: 'shopping' },
     { time: '18:00', title: '친정 부모님 방문', location: '집', type: 'family' },
   ];
 
-  // D-Day 계산 헬퍼
+  // 3. D-Day 계산 헬퍼
   const getDays = (dateString) => {
       const today = new Date();
       const birth = new Date(dateString);
@@ -121,8 +124,12 @@ const DashboardPage = () => {
             </div>
             
             <div className="hidden md:flex gap-2">
-                <button className="bg-white text-orange-500 px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-black/5 hover:bg-orange-50 transition-colors flex items-center gap-2">
-                    <Plus className="w-4 h-4" strokeWidth={3} /> 기록
+                <button 
+                    onClick={() => navigate('/record')}
+                    className="bg-white text-orange-500 px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-black/5 hover:bg-orange-50 transition-colors flex items-center gap-2"
+                >
+                    <Plus className="w-4 h-4" strokeWidth={3} />
+                    <span>성장 기록</span>
                 </button>
             </div>
         </div>
@@ -140,7 +147,10 @@ const DashboardPage = () => {
             <div className="flex-1 min-h-0 flex flex-col">
                 <div className="flex justify-between items-center mb-3 px-1">
                     <h3 className="text-lg font-bold text-gray-800">오늘의 일정</h3>
-                    <button className="text-xs font-bold text-amber-500 hover:text-amber-600 flex items-center bg-amber-50 px-2 py-1 rounded-lg">
+                    <button 
+                        onClick={() => navigate('/calendar')}
+                        className="text-xs font-bold text-amber-500 hover:text-amber-600 flex items-center bg-amber-50 px-2 py-1 rounded-lg"
+                    >
                         전체보기 <ChevronRight className="w-3 h-3 ml-0.5" />
                     </button>
                 </div>
@@ -180,7 +190,10 @@ const DashboardPage = () => {
                     </div>
                     <h3 className="text-lg font-bold leading-tight mb-1">수면 교육의 정석</h3>
                     <p className="text-indigo-200 text-xs mb-4">통잠 자는 아이를 위한 비법</p>
-                    <button className="w-full bg-white text-indigo-900 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-50 transition-colors">
+                    <button 
+                        onClick={() => navigate('/guide')}
+                        className="w-full bg-white text-indigo-900 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-50 transition-colors"
+                    >
                         읽어보기
                     </button>
                  </div>
