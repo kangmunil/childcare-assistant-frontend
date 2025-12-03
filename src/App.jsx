@@ -13,9 +13,7 @@ import PlaceholderPage from './pages/PlaceholderPage';
 import SideBar from './components/SideBar';
 import BottomNavBar from './components/BottomNavBar';
 import ChatWindow, { FloatingChatButton } from './components/ChatWindow';
-
-// 아직 로그인/헤더 컴포넌트가 없을 수 있어서 주석 처리하거나 간소화했습니다.
-// 나중에 로그인 페이지 만드시면 ProtectedRoute 적용하면 됩니다.
+import Header from './components/Header'; // ★ [New] 만든 헤더 불러오기
 
 const MainLayout = ({ children }) => {
     return (
@@ -30,12 +28,18 @@ const MainLayout = ({ children }) => {
             {/* 사이드바 (PC) */}
             <div className="hidden md:block relative z-20 h-full shrink-0"><SideBar /></div>
             
-            {/* 메인 콘텐츠 */}
+            {/* 메인 콘텐츠 영역 */}
             <main className="flex-1 relative z-10 h-full overflow-hidden flex flex-col">
-                <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 scroll-smooth">
+                
+                {/* ★ [핵심] 헤더를 여기에 고정! (shrink-0으로 찌그러짐 방지) */}
+                <div className="shrink-0 px-4 pt-2 md:px-6 md:pt-4 lg:px-8 lg:pt-6 pb-0 z-30">
+                    <Header />
+                </div>
+
+                {/* 실제 페이지 내용 (여기만 스크롤됨) */}
+                <div className="flex-1 overflow-y-auto px-4 md:px-6 lg:px-8 pb-4 scroll-smooth custom-scrollbar">
                     <div className="max-w-6xl mx-auto h-full animate-fade-in flex flex-col">
-                        {/* <Header /> 헤더가 있다면 주석 해제하세요 */}
-                        <div className="flex-1 min-h-0">
+                        <div className="flex-1 min-h-0 flex flex-col">
                             {children}
                         </div>
                     </div>
@@ -64,19 +68,12 @@ const ChatWindowWrapper = () => {
 function App() {
   return (
     <Routes>
-        {/* 기본 경로(/)로 오면 대시보드로 바로 이동시킴 */}
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        
-        {/* 각 페이지 연결 */}
         <Route path="/dashboard" element={<MainLayout><DashboardPage /></MainLayout>} />
         <Route path="/calendar" element={<MainLayout><CalendarPage /></MainLayout>} />
         <Route path="/record" element={<MainLayout><RecordPage /></MainLayout>} />
-        
-        {/* 아직 안 만든 페이지들 */}
         <Route path="/guide" element={<MainLayout><PlaceholderPage title="육아 가이드" icon={BookOpen} color="bg-emerald-400" /></MainLayout>} />
         <Route path="/settings" element={<MainLayout><PlaceholderPage title="설정 관리" icon={Settings} color="bg-gray-400" /></MainLayout>} />
-
-        {/* 이상한 주소로 오면 대시보드로 보냄 */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );
