@@ -1,4 +1,3 @@
-// src/components/ChatWindow.jsx
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, Bot, Loader2, Sparkles } from 'lucide-react';
 import useStore from '../store/useStore';
@@ -79,8 +78,8 @@ const ChatWindow = () => {
         ))}
 
         {/* 로딩 인디케이터 (생각 중일 때) */}
-        {isAiThinking && (
-           <div className="flex justify-start">
+        {isAiThinking && ( 
+           <div className="flex justify-start">  
                <div className="w-8 h-8 bg-white border border-gray-100 rounded-full flex items-center justify-center mr-2 shrink-0 shadow-sm">
                    <img src="https://api.dicebear.com/7.x/bottts/svg?seed=Bebe" alt="AI" className="w-5 h-5" />
                </div>
@@ -92,7 +91,7 @@ const ChatWindow = () => {
            </div>
         )}
         
-        <div ref={messagesEndRef} />
+        <div ref={messagesEndRef} /> 
       </div>
 
       <form onSubmit={handleSend} className="p-3 bg-white border-t border-gray-100 shrink-0">
