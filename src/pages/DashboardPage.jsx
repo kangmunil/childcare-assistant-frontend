@@ -1,16 +1,28 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Milk, Moon, Activity, Plus, ChevronRight, BookOpen, Droplet } from 'lucide-react';
 import TrackerCard from '../components/TrackerCard'; 
+import TrackerInputModal from '../components/TrackerInputModal';
 import useStore from '../store/useStore'; 
+import PromoWidget from '../components/PromoWidget';
+
+const statusConfig = {
+  sleep: { text: '💤 낮잠중', color: 'bg-indigo-500', ring: 'ring-indigo-300' },
+  play:  { text: '🧸 노는중', color: 'bg-emerald-500', ring: 'ring-emerald-300' },
+  eat:   { text: '🍼 맘마중', color: 'bg-amber-500',   ring: 'ring-amber-300' },
+  bath:  { text: '🛁 목욕중', color: 'bg-sky-500',     ring: 'ring-sky-300' },
+  sick:  { text: '🤒 아파요', color: 'bg-rose-500',    ring: 'ring-rose-300' },
+};
 
 const DashboardPage = () => {
-  const { children, activeChildId, events } = useStore(); 
+  const { children, activeChildId, events, trackerData, updateTrackerData, currentStatus, setCurrentStatus } = useStore();
   const navigate = useNavigate(); 
   
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedTracker, setSelectedTracker] = useState(null);
+
   const currentChild = children.find(c => c.id === activeChildId) || children[0];
 
-  // 1. "오늘" 날짜에 해당하는 일정만 필터링
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   
@@ -18,12 +30,11 @@ const DashboardPage = () => {
     .filter(event => event.date === todayStr)
     .sort((a, b) => a.time.localeCompare(b.time));
 
-  // 요약 데이터
   const summaryData = [
-    { id: 1, title: 'Feeding', subtitle: '모유/분유', value: '850', unit: 'ml', themeColor: 'amber', icon: Milk },
-    { id: 2, title: 'Pumping', subtitle: '유축량', value: '120', unit: 'ml', themeColor: 'emerald', icon: Droplet },
-    { id: 3, title: 'Sleep', subtitle: '총 수면', value: '12', unit: 'hr', themeColor: 'indigo', icon: Moon },
-    { id: 4, title: 'Diaper', subtitle: '기저귀', value: '6', unit: '회', themeColor: 'sky', icon: Activity },
+    { id: 1, key: 'feeding', title: 'Feeding', subtitle: '모유/분유', value: trackerData.feeding, unit: 'ml', themeColor: 'amber', icon: Milk },
+    { id: 2, key: 'pumping', title: 'Pumping', subtitle: '유축량', value: trackerData.pumping, unit: 'ml', themeColor: 'emerald', icon: Droplet },
+    { id: 3, key: 'sleep', title: 'Sleep', subtitle: '총 수면', value: trackerData.sleep, unit: 'hr', themeColor: 'indigo', icon: Moon },
+    { id: 4, key: 'diaper', title: 'Diaper', subtitle: '기저귀', value: trackerData.diaper, unit: '회', themeColor: 'sky', icon: Activity },
   ];
 
   const getDays = (dateString) => {
@@ -34,10 +45,65 @@ const DashboardPage = () => {
       return days > 0 ? days : 1;
   };
 
+  const handleCardClick = (item) => {
+    setSelectedTracker(item);
+    setIsModalOpen(true);
+  };
+
+  const handleSaveData = (id, newValue) => {
+    const item = summaryData.find(d => d.id === id);
+    if (item) {
+        updateTrackerData(item.key, newValue);
+    }
+  };
+
+  // 현재 상태 가져오기 (기본값 play)
+  const currentStatusInfo = statusConfig[currentStatus] || statusConfig.play;
+
+  // 상태 배지 클릭 시 변경하는 핸들러
+  const handleStatusClick = () => {
+    const statusKeys = Object.keys(statusConfig);
+    const currentIndex = statusKeys.indexOf(currentStatus || 'play');
+    const nextIndex = (currentIndex + 1) % statusKeys.length;
+    setCurrentStatus(statusKeys[nextIndex]);
+  };
+
+  const promoList = [
+    { 
+      id: 1, type: 'guide', 
+      title: '수면 교육의 정석', 
+      description: '통잠 자는 아이를 위한 3가지 비법', 
+      link: 'https://example.com/sleep-guide',
+      buttonText: '읽어보기'
+    },
+    { 
+      id: 2, type: 'ad', 
+      title: '유기농 기저귀 특가', 
+      description: '우리 아이 엉덩이 발진 걱정 끝!', 
+      link: 'https://example.com/diaper-ad',
+      buttonText: '구경하러 가기'
+    },
+    { 
+      id: 3, type: 'info', 
+      title: '이유식 알러지 체크', 
+      description: '계란, 땅콩 테스트 시기 확인하기', 
+      link: 'https://example.com/food-guide'
+    }
+  ];
+
+  const currentPromo = promoList[Math.floor(Math.random() * promoList.length)];
+
   return (
     <div className="pb-24 md:pb-0 h-full flex flex-col relative">
-      
-      {/* 1. Compact Hero Card */}
+
+      <TrackerInputModal 
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        data={selectedTracker}
+        onSave={handleSaveData}
+      />
+
+      {/* Hero Card */}
       <div className="bg-gradient-to-br from-amber-300 via-orange-400 to-rose-400 rounded-[2rem] p-6 text-white shadow-lg shadow-orange-100 mb-6 relative overflow-hidden shrink-0">
         <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
         <div className="absolute bottom-0 left-0 w-48 h-48 bg-yellow-300 opacity-20 rounded-full -ml-10 -mb-10 blur-2xl"></div>
@@ -52,16 +118,21 @@ const DashboardPage = () => {
                         <span className="bg-white/20 backdrop-blur-md px-2 py-0.5 rounded-full text-[10px] font-bold border border-white/20">
                             생후 {getDays(currentChild.birthDate)}일
                         </span>
-                        <span className="bg-emerald-400/80 backdrop-blur-md px-2 py-0.5 rounded-full text-[10px] font-bold border border-white/20 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span> {currentChild.name === '지우' ? '낮잠중' : '노는중'}
-                        </span>
+                        
+                        {/* 상태 배지 부분 */}
+                        <button 
+                            onClick={handleStatusClick}
+                            className={`${currentStatusInfo.color} text-white px-2 py-0.5 rounded-full text-[10px] font-bold border border-white/20 flex items-center gap-1 shadow-sm transition-all hover:scale-105 active:scale-95`}
+                        >
+                            <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
+                            {currentStatusInfo.text}
+                        </button>
                     </div>
                     <h2 className="text-2xl font-black tracking-tight">{currentChild.name} {currentChild.gender === 'female' ? '공주님' : '왕자님'}</h2>
                 </div>
             </div>
             
             <div className="hidden md:flex gap-2">
-                {/* [성장 기록] 버튼 누르면 -> /record 페이지로 이동 */}
                 <button 
                     onClick={() => navigate('/record')}
                     className="bg-white text-orange-500 px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-black/5 hover:bg-orange-50 transition-colors flex items-center gap-2"
@@ -74,19 +145,26 @@ const DashboardPage = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 min-h-0 flex-1">
-        {/* Left Column (Main Content) */}
+        {/* Left Column */}
         <div className="md:col-span-8 flex flex-col gap-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 shrink-0">
-                {summaryData.map((item) => (
-                    <TrackerCard key={item.id} {...item} />
-                ))}
+                {summaryData.map((item) => {
+                    const { key, ...cardProps } = item; 
+                    return (
+                        <div 
+                            key={item.id} 
+                            onClick={() => handleCardClick(item)} 
+                            className="cursor-pointer transition-transform hover:scale-105 active:scale-95"
+                        >
+                            <TrackerCard {...cardProps} />
+                        </div>
+                    );
+                })}
             </div>
 
             <div className="flex-1 min-h-0 flex flex-col">
                 <div className="flex justify-between items-center mb-3 px-1">
                     <h3 className="text-lg font-bold text-gray-800">오늘의 일정</h3>
-                    
-                    {/* [전체보기] 버튼 누르면 -> /calendar 페이지로 이동 */}
                     <button 
                         onClick={() => navigate('/calendar')}
                         className="text-xs font-bold text-amber-500 hover:text-amber-600 flex items-center bg-amber-50 px-2 py-1 rounded-lg transition-colors"
@@ -98,7 +176,6 @@ const DashboardPage = () => {
                     <div className="space-y-3">
                         {todaySchedules.length > 0 ? (
                             todaySchedules.map((item, index) => (
-                                // [NEW] 일정 항목 자체를 클릭해도 캘린더로 이동하게 수정!
                                 <div 
                                     key={index} 
                                     onClick={() => navigate('/calendar')}
@@ -116,8 +193,6 @@ const DashboardPage = () => {
                                             {item.location} • {item.type === 'hospital' ? '병원' : item.type === 'event' ? '행사' : '할일'}
                                         </p>
                                     </div>
-                                    
-                                    {/* 화살표 버튼 */}
                                     <button className="w-8 h-8 rounded-full border border-gray-100 flex items-center justify-center text-gray-400 hover:bg-amber-500 hover:text-white hover:border-amber-500 transition-all">
                                         <ChevronRight className="w-4 h-4" />
                                     </button>
@@ -126,7 +201,6 @@ const DashboardPage = () => {
                         ) : (
                             <div className="p-8 text-center text-gray-400 flex flex-col items-center justify-center h-full">
                                 <p className="text-sm font-medium">오늘 예정된 일정이 없어요 🏝️</p>
-                                {/* [일정 추가하러 가기] 버튼 -> 캘린더로 이동 */}
                                 <button onClick={() => navigate('/calendar')} className="text-xs text-amber-500 mt-2 hover:underline">일정 추가하러 가기</button>
                             </div>
                         )}
@@ -135,31 +209,15 @@ const DashboardPage = () => {
             </div>
         </div>
 
-        {/* Right Column (Side Widgets) */}
+        {/* Right Column */}
         <div className="md:col-span-4 flex flex-col gap-6">
-            <div className="bg-indigo-900 rounded-[2rem] p-6 text-white relative overflow-hidden shadow-lg shadow-indigo-100 shrink-0">
-                 <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500 rounded-full blur-[50px] opacity-50 -mr-8 -mt-8"></div>
-                 <div className="relative z-10">
-                    <div className="inline-flex items-center gap-1.5 bg-indigo-800/50 px-2 py-0.5 rounded-md border border-indigo-700/50 mb-3">
-                        <BookOpen className="w-3 h-3 text-indigo-300" />
-                        <span className="text-[10px] font-bold tracking-wide uppercase text-indigo-200">Premium</span>
-                    </div>
-                    <h3 className="text-lg font-bold leading-tight mb-1">수면 교육의 정석</h3>
-                    <p className="text-indigo-200 text-xs mb-4">통잠 자는 아이를 위한 비법</p>
-                    <button 
-                        onClick={() => navigate('/guide')}
-                        className="w-full bg-white text-indigo-900 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-50 transition-colors"
-                    >
-                        읽어보기
-                    </button>
-                 </div>
-            </div>
+            {/* PromoWidget이 이 div 안에 있어야 합니다! */}
+            <PromoWidget data={currentPromo} />
             
-            {/* [NEW] 미니 달력을 클릭하면 -> /calendar 페이지로 이동! */}
-             <div 
+            <div 
                 onClick={() => navigate('/calendar')}
                 className="bg-white rounded-[2rem] p-5 shadow-sm border border-gray-100 flex-1 cursor-pointer hover:border-amber-200 hover:shadow-md transition-all group"
-             >
+            >
                 <div className="flex justify-between items-center mb-3">
                     <h3 className="text-base font-bold text-gray-800 group-hover:text-amber-600 transition-colors">
                         {today.getMonth() + 1}월

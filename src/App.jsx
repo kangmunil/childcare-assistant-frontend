@@ -1,6 +1,6 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { NotebookPen, BookOpen, Settings } from 'lucide-react';
+import { BookOpen, Settings } from 'lucide-react';
 import useStore from './store/useStore'; 
 
 // 페이지들
@@ -8,12 +8,12 @@ import DashboardPage from './pages/DashboardPage';
 import CalendarPage from './pages/CalendarPage';
 import RecordPage from './pages/RecordPage'; 
 import PlaceholderPage from './pages/PlaceholderPage';
+import SettingsPage from './pages/SettingsPage';
 
-// 컴포넌트들
-import SideBar from './components/SideBar';
+import SideBar from './components/SideBar'; 
 import BottomNavBar from './components/BottomNavBar';
 import ChatWindow, { FloatingChatButton } from './components/ChatWindow';
-import Header from './components/Header'; // ★ [New] 만든 헤더 불러오기
+import Header from './components/Header';
 
 const MainLayout = ({ children }) => {
     return (
@@ -31,12 +31,12 @@ const MainLayout = ({ children }) => {
             {/* 메인 콘텐츠 영역 */}
             <main className="flex-1 relative z-10 h-full overflow-hidden flex flex-col">
                 
-                {/* ★ [핵심] 헤더를 여기에 고정! (shrink-0으로 찌그러짐 방지) */}
+                {/* 헤더 고정 */}
                 <div className="shrink-0 px-4 pt-2 md:px-6 md:pt-4 lg:px-8 lg:pt-6 pb-0 z-30">
                     <Header />
                 </div>
 
-                {/* 실제 페이지 내용 (여기만 스크롤됨) */}
+                {/* 실제 페이지 내용 */}
                 <div className="flex-1 overflow-y-auto px-4 md:px-6 lg:px-8 pb-4 scroll-smooth custom-scrollbar">
                     <div className="max-w-6xl mx-auto h-full animate-fade-in flex flex-col">
                         <div className="flex-1 min-h-0 flex flex-col">
@@ -73,7 +73,7 @@ function App() {
         <Route path="/calendar" element={<MainLayout><CalendarPage /></MainLayout>} />
         <Route path="/record" element={<MainLayout><RecordPage /></MainLayout>} />
         <Route path="/guide" element={<MainLayout><PlaceholderPage title="육아 가이드" icon={BookOpen} color="bg-emerald-400" /></MainLayout>} />
-        <Route path="/settings" element={<MainLayout><PlaceholderPage title="설정 관리" icon={Settings} color="bg-gray-400" /></MainLayout>} />
+        <Route path="/settings" element={<MainLayout><SettingsPage /></MainLayout>} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );
