@@ -21,6 +21,14 @@ const useStore = create(
       ],
       activeChildId: 1,
 
+      trackerData: {
+        feeding: '850', // 모유/분유량
+        pumping: '120', // 유축량
+        sleep: '12',    // 수면 시간
+        diaper: '6'     // 기저귀 횟수
+      },
+      currentStatus: 'play',
+      setCurrentStatus: (status) => set({ currentStatus: status }),
       // ==========================================
       // 3. 성장 기록 데이터
       // ==========================================
@@ -99,7 +107,13 @@ const useStore = create(
           await new Promise(r => setTimeout(r, 1000));
           set({ isAiThinking: false });
           // ... (이후 로직은 컴포넌트나 여기서 처리 가능)
-      }
+      },
+      updateTrackerData: (key, value) => set((state) => ({
+        trackerData: {
+          ...state.trackerData,
+          [key]: value
+        }
+      })),
     }),
     {
       name: 'bebehelper-storage',
