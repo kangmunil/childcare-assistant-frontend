@@ -4,7 +4,8 @@ import useStore from '../store/useStore';
 
 // 1. 채팅창 컴포넌트 (메인)
 const ChatWindow = () => {
-  const { isChatOpen, toggleChat, messages, addUserMessage, generateAiResponse, isAiThinking } = useStore();
+  // [수정 1] initialChatQuery 추가로 가져오기
+  const { isChatOpen, toggleChat, messages, addUserMessage, generateAiResponse, isAiThinking, initialChatQuery } = useStore();
   const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef(null);
 
@@ -16,6 +17,16 @@ const ChatWindow = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isAiThinking]);
+
+  // [수정 2] ★ 핵심 로직: 퀵 버튼으로 열었을 때 자동 질문 전송
+  useEffect(() => {
+    if (isChatOpen && initialChatQuery) {
+        addUserMessage(initialChatQuery); // 질문 등록
+        generateAiResponse();             // AI 답변 트리거
+        // 참고: Store의 closeChat()이 호출될 때 initialChatQuery가 초기화되므로
+        // 여기서는 별도로 초기화하지 않아도, 닫았다가 다시 열지 않는 이상 중복 전송되지 않음
+    }
+  }, [isChatOpen, initialChatQuery]);
 
   // 엔터키 전송
   const handleKeyPress = (e) => {
@@ -52,6 +63,7 @@ const ChatWindow = () => {
                 <p className="text-[10px] text-indigo-100 opacity-80">무엇이든 물어보세요!</p>
             </div>
         </div>
+        {/* toggleChat은 store에서 이미 닫을 때 초기화를 수행하도록 되어 있음 */}
         <button onClick={toggleChat} className="p-2 hover:bg-white/20 rounded-full transition-colors">
           <Minimize2 className="w-4 h-4" />
         </button>
@@ -114,7 +126,6 @@ const ChatWindow = () => {
 export const FloatingChatButton = () => {
     const { toggleChat, isChatOpen } = useStore();
 
-    // 채팅창이 열려있으면 버튼 숨김 (모바일 UX 고려)
     if (isChatOpen) return null;
 
     return (
@@ -123,8 +134,6 @@ export const FloatingChatButton = () => {
             className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-tr from-indigo-600 to-purple-600 text-white rounded-full shadow-lg shadow-indigo-300 flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-40 group"
         >
             <MessageCircle className="w-7 h-7 group-hover:rotate-12 transition-transform" />
-            
-            {/* 툴팁 */}
             <span className="absolute right-full mr-3 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs py-1.5 px-3 rounded-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                 AI 육아상담
             </span>
