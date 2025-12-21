@@ -1,17 +1,23 @@
-// src/components/Header.jsx
 import React, { useState } from 'react';
-import { Plus, Bell, X, Baby, Calendar as CalendarIcon } from 'lucide-react';
+import { Plus, Bell, X, Baby } from 'lucide-react';
 import useStore from '../store/useStore';
+import NotificationDropdown from './NotificationDropdown';
 
 const Header = () => {
-  const { children, activeChildId, setActiveChild, addChild } = useStore();
+  const { children, activeChildId, setActiveChild, addChild, notifications } = useStore();
   
-  // 모달 상태와 로직을 여기로 가져옴
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isNotiOpen, setIsNotiOpen] = useState(false);
+
+  // 읽지 않은 알림 개수 계산
+  const safeNotifications = notifications || [];
+  const unreadCount = safeNotifications.filter(n => !n.isRead).length;
+
   const [newChildName, setNewChildName] = useState('');
   const [newChildDate, setNewChildDate] = useState('');
   const [newChildGender, setNewChildGender] = useState('female');
 
+  // 현재 선택된 아이 (없으면 첫 번째)
   const currentChild = children.find(c => c.id === activeChildId) || children[0];
 
   const handleAddChild = (e) => {
@@ -29,48 +35,76 @@ const Header = () => {
     setIsModalOpen(false);
   };
 
+  // 이미지 에러 시 기본 이미지로 대체하는 핸들러
+  const handleImageError = (e) => {
+    e.target.src = 'https://cdn-icons-png.flaticon.com/512/3233/3233483.png'; // 임시 기본 이미지
+  };
+
   return (
     <>
-      <header className="flex justify-between items-center mb-6 px-1 shrink-0">
-        <div>
-            <div className="flex gap-2 mb-2 flex-wrap">
-                {children.map(child => (
-                    <button 
-                        key={child.id}
-                        onClick={() => setActiveChild(child.id)}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${
-                            activeChildId === child.id 
-                            ? 'bg-amber-500 text-white border-amber-500 shadow-md ring-2 ring-amber-200' 
-                            : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50'
-                        }`}
-                    >
-                        <div className="w-4 h-4 rounded-full bg-white/30 overflow-hidden">
-                            <img src={child.photo} alt={child.name} className="w-full h-full object-cover" />
-                        </div>
-                        {child.name}
-                    </button>
-                ))}
-               
+      {/* z-index를 40으로 유지하되, 필요 시 모달보다 낮아야 함 */}
+      <header className="flex justify-between items-center mb-4 px-1 shrink-0 relative z-40">
+        
+        {/* [수정됨] 인사말(H1) 삭제하고 아이 선택 버튼만 남김 */}
+        <div className="flex gap-2 flex-wrap items-center">
+            {children.map(child => (
                 <button 
-                    onClick={() => setIsModalOpen(true)}
-                    className="w-8 h-8 rounded-full border border-dashed border-gray-300 flex items-center justify-center text-gray-300 hover:text-amber-500 hover:border-amber-400 transition-colors"
+                    key={child.id}
+                    onClick={() => setActiveChild(child.id)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${
+                        activeChildId === child.id 
+                        ? 'bg-amber-500 text-white border-amber-500 shadow-md ring-2 ring-amber-200' 
+                        : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50'
+                    }`}
                 >
-                    <Plus className="w-4 h-4" />
+                    <div className="w-4 h-4 rounded-full bg-white/30 overflow-hidden">
+                        <img 
+                            src={child.photo || 'default_path'} 
+                            alt={child.name} 
+                            className="w-full h-full object-cover"
+                            onError={handleImageError} // [추가됨] 이미지 엑박 방지
+                        />
+                    </div>
+                    {child.name}
                 </button>
-            </div>
-            <h1 className="text-xl font-black text-gray-800 tracking-tight">
-                {currentChild ? `${currentChild.name}맘님, 환영해요!` : '아이를 등록해주세요!'}
-            </h1>
+            ))}
+            
+            <button 
+                onClick={() => setIsModalOpen(true)}
+                className="w-8 h-8 rounded-full border border-dashed border-gray-300 flex items-center justify-center text-gray-300 hover:text-amber-500 hover:border-amber-400 transition-colors"
+            >
+                <Plus className="w-4 h-4" />
+            </button>
         </div>
-        <div className="bg-white p-2.5 rounded-full shadow-sm border border-gray-100 cursor-pointer hover:bg-gray-50 relative group">
-            <Bell className="w-5 h-5 text-gray-400 group-hover:text-amber-500 transition-colors" />
-            <div className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border border-white"></div>
+
+        {/* 우측 알림 버튼 영역 */}
+        <div className="relative">
+            <button 
+                onClick={() => setIsNotiOpen(!isNotiOpen)}
+                className={`p-2.5 rounded-full shadow-sm border transition-all ${
+                    isNotiOpen ? 'bg-amber-50 border-amber-200 text-amber-500' : 'bg-white border-gray-100 text-gray-400 hover:bg-gray-50'
+                }`}
+            >
+                <Bell className="w-5 h-5" />
+                {unreadCount > 0 && (
+                    <div className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border border-white"></div>
+                )}
+            </button>
+
+            {/* 알림 드롭다운 */}
+            {isNotiOpen && (
+                // 위치 잡기 위해 div로 한 번 감싸는 것 추천 (스타일은 NotificationDropdown 내부에 맡김)
+                <div className="absolute right-0 top-full mt-2 z-50">
+                     <NotificationDropdown onClose={() => setIsNotiOpen(false)} />
+                </div>
+            )}
         </div>
       </header>
 
-      {/* 모달 (Header 레벨에서 관리되어야 어디서든 뜸) */}
+      {/* 자녀 추가 모달 */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+        // [수정됨] z-index를 100으로 높여서 최상단 보장
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in">
             <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-sm p-6 relative border border-white/50">
                 <button 
                     onClick={() => setIsModalOpen(false)}
@@ -102,16 +136,14 @@ const Header = () => {
 
                     <div>
                         <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">생년월일</label>
-                        <div className="relative">
-                            <input 
-                                type="date" 
-                                value={newChildDate}
-                                onChange={(e) => setNewChildDate(e.target.value)}
-                                className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-300 transition-all text-gray-700"
-                                required
-                            />
-                            <CalendarIcon className="absolute right-4 top-3.5 w-4 h-4 text-gray-400 pointer-events-none" />
-                        </div>
+                        {/* [확인] type="date"로 잘 되어 있음 */}
+                        <input 
+                            type="date" 
+                            value={newChildDate}
+                            onChange={(e) => setNewChildDate(e.target.value)}
+                            className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-300 transition-all text-gray-700"
+                            required
+                        />
                     </div>
 
                     <div>
