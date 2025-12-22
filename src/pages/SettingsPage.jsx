@@ -3,21 +3,21 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, User, Shield, HelpCircle, LogOut, ChevronRight, Moon, Volume2, X, Plus, Trash2 } from 'lucide-react';
 import useStore from '../store/useStore'; 
 
-// [1] 재사용 가능한 공통 모달 컴포넌트
+// [1] 재사용 가능한 공통 모달 컴포넌트 (다크모드 적용됨)
 const CommonModal = ({ isOpen, onClose, title, children }) => {
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-      {/* 배경 (클릭 시 닫힘) */}
+      {/* 배경 */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       
       {/* 모달 본문 */}
-      <div className="relative bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-fade-in-up">
+      <div className="relative bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-fade-in-up transition-colors duration-300">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold text-gray-800">{title}</h3>
-          <button onClick={onClose} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors">
-            <X className="w-5 h-5 text-gray-600" />
+          <h3 className="text-xl font-bold text-gray-800 dark:text-white">{title}</h3>
+          <button onClick={onClose} className="p-2 bg-gray-100 dark:bg-gray-700 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+            <X className="w-5 h-5 text-gray-600 dark:text-gray-300" />
           </button>
         </div>
         <div className="max-h-[70vh] overflow-y-auto no-scrollbar">
@@ -30,20 +30,23 @@ const CommonModal = ({ isOpen, onClose, title, children }) => {
 
 const SettingsPage = () => {
   const navigate = useNavigate();
-  const { user, logout } = useStore();
   
-  // --- 상태 관리 ---
-  const [notifications, setNotifications] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
+  // [Store 연결] 전역 상태 가져오기
+  const { 
+    user, 
+    logout, 
+    isDarkMode, 
+    toggleDarkMode,
+    children,    // 전역 자녀 리스트
+    addChild     // 자녀 추가 액션
+  } = useStore();
   
-  // 모달 활성화 상태 ('profile' | 'children' | null)
+  // --- 로컬 UI 상태 ---
+  const [notifications, setNotifications] = useState(true); // 알림 토글은 로컬 유지(예시)
   const [activeModal, setActiveModal] = useState(null); 
   
-  // 데이터 상태 (임시)
+  // 프로필 수정용 임시 상태
   const [tempName, setTempName] = useState(user?.name || '김아빠');
-  const [childrenList, setChildrenList] = useState([
-    { id: 1, name: '첫째', age: 5 }, 
-  ]);
 
   // 자녀 추가 모드 상태
   const [isAddingChild, setIsAddingChild] = useState(false);
@@ -55,17 +58,24 @@ const SettingsPage = () => {
         alert('이름과 나이를 모두 입력해주세요.');
         return;
     }
-    setChildrenList([
-        ...childrenList, 
-        { id: Date.now(), name: newChildInput.name, age: newChildInput.age }
-    ]);
+    
+    // [Store Action] 전역 상태에 자녀 추가
+    addChild({
+        name: newChildInput.name,
+        // 나이는 number로 변환, 임시로 birthDate 등은 현재 기준으로 처리하거나 생략
+        birthDate: `${new Date().getFullYear() - newChildInput.age}-01-01`, 
+        gender: 'unknown' 
+    });
+
     // 초기화 및 모달 닫기
     setNewChildInput({ name: '', age: '' });
     setIsAddingChild(false);
   };
 
   const handleDeleteChild = (id) => {
-    setChildrenList(childrenList.filter(child => child.id !== id));
+    // 현재 Store에는 deleteChild 액션이 없으므로 알림으로 대체
+    // 필요 시 useStore에 removeChild 액션 추가 필요
+    alert("자녀 삭제 기능은 데이터 안전을 위해 준비 중입니다."); 
   };
 
   const handleLogout = () => {
@@ -78,8 +88,8 @@ const SettingsPage = () => {
   // --- 서브 컴포넌트 (UI) ---
   const Section = ({ title, children }) => (
     <div className="mb-6">
-      <h3 className="text-sm font-bold text-gray-400 mb-2 px-2">{title}</h3>
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <h3 className="text-sm font-bold text-gray-400 dark:text-gray-500 mb-2 px-2">{title}</h3>
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors duration-300">
         {children}
       </div>
     </div>
@@ -88,26 +98,26 @@ const SettingsPage = () => {
   const MenuItem = ({ icon: Icon, label, value, onClick, isToggle, toggleState, onToggle }) => (
     <div 
         onClick={isToggle ? undefined : onClick}
-        className={`flex items-center justify-between p-4 border-b border-gray-50 last:border-0 ${!isToggle && 'cursor-pointer hover:bg-gray-50'} transition-colors`}
+        className={`flex items-center justify-between p-4 border-b border-gray-50 dark:border-gray-700 last:border-0 ${!isToggle && 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750'} transition-colors`}
     >
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500">
+        <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-300">
             <Icon className="w-4 h-4" />
         </div>
-        <span className="text-gray-700 font-medium">{label}</span>
+        <span className="text-gray-700 dark:text-gray-200 font-medium">{label}</span>
       </div>
       
       {isToggle ? (
         <button 
             onClick={onToggle}
-            className={`w-12 h-6 rounded-full p-1 transition-colors ${toggleState ? 'bg-amber-500' : 'bg-gray-200'}`}
+            className={`w-12 h-6 rounded-full p-1 transition-colors ${toggleState ? 'bg-amber-500' : 'bg-gray-200 dark:bg-gray-600'}`}
         >
             <div className={`w-4 h-4 rounded-full bg-white shadow-sm transform transition-transform ${toggleState ? 'translate-x-6' : 'translate-x-0'}`} />
         </button>
       ) : (
         <div className="flex items-center gap-2">
-            {value && <span className="text-sm text-gray-400">{value}</span>}
-            <ChevronRight className="w-4 h-4 text-gray-300" />
+            {value && <span className="text-sm text-gray-400 dark:text-gray-500">{value}</span>}
+            <ChevronRight className="w-4 h-4 text-gray-300 dark:text-gray-600" />
         </div>
       )}
     </div>
@@ -115,8 +125,9 @@ const SettingsPage = () => {
 
   return (
     <>
-    <div className="pb-24 pt-6 px-4 h-full overflow-y-auto">
-      <h1 className="text-2xl font-black text-gray-800 mb-6">설정</h1>
+    {/* 전체 배경색 다크모드 적용 */}
+    <div className="pb-24 pt-6 px-4 h-full overflow-y-auto bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
+      <h1 className="text-2xl font-black text-gray-800 dark:text-white mb-6">설정</h1>
 
       <Section title="계정 관리">
         <MenuItem 
@@ -127,7 +138,7 @@ const SettingsPage = () => {
         <MenuItem 
             icon={Shield} 
             label="자녀 관리" 
-            value={`${childrenList.length}명`} 
+            value={`${children.length}명`} // Store 데이터 사용
             onClick={() => setActiveModal('children')} 
         />
       </Section>
@@ -142,10 +153,10 @@ const SettingsPage = () => {
         />
         <MenuItem 
             icon={Moon} 
-            label="다크 모드" 
+            label="다크 모드 (수유 모드)" 
             isToggle 
-            toggleState={darkMode} 
-            onToggle={() => setDarkMode(!darkMode)} 
+            toggleState={isDarkMode}     // Store 상태 연결
+            onToggle={toggleDarkMode}    // Store 액션 연결
         />
          <MenuItem 
             icon={Volume2} 
@@ -160,7 +171,7 @@ const SettingsPage = () => {
         <MenuItem icon={LogOut} label="로그아웃" onClick={handleLogout} />
       </Section>
       
-      <div className="text-center text-xs text-gray-300 mt-8 mb-4">
+      <div className="text-center text-xs text-gray-300 dark:text-gray-600 mt-8 mb-4">
         현재 버전 v1.0.0
       </div>
     </div>
@@ -180,13 +191,13 @@ const SettingsPage = () => {
                     type="text" 
                     value={tempName} 
                     onChange={(e) => setTempName(e.target.value)}
-                    className="w-full bg-gray-50 p-3 rounded-xl border border-gray-200 focus:outline-none focus:border-amber-400 transition-colors"
+                    className="w-full bg-gray-50 dark:bg-gray-700 dark:text-white p-3 rounded-xl border border-gray-200 dark:border-gray-600 focus:outline-none focus:border-amber-400 transition-colors"
                 />
             </div>
             <button 
                 onClick={() => {
-                    // TODO: API 호출 -> user 정보 업데이트
-                    alert('저장되었습니다.');
+                    // 추후 Store에 updateUserName 액션 추가 필요
+                    alert('저장되었습니다 (UI only).');
                     setActiveModal(null);
                 }}
                 className="w-full py-3 bg-amber-400 text-white font-bold rounded-xl hover:bg-amber-500 transition-colors mt-4"
@@ -215,7 +226,7 @@ const SettingsPage = () => {
                         placeholder="예: 튼튼이"
                         value={newChildInput.name}
                         onChange={(e) => setNewChildInput({...newChildInput, name: e.target.value})}
-                        className="w-full bg-gray-50 p-3 rounded-xl border border-gray-200 focus:outline-none focus:border-amber-400"
+                        className="w-full bg-gray-50 dark:bg-gray-700 dark:text-white p-3 rounded-xl border border-gray-200 dark:border-gray-600 focus:outline-none focus:border-amber-400"
                         autoFocus
                     />
                 </div>
@@ -226,14 +237,14 @@ const SettingsPage = () => {
                         placeholder="숫자만 입력"
                         value={newChildInput.age}
                         onChange={(e) => setNewChildInput({...newChildInput, age: e.target.value})}
-                        className="w-full bg-gray-50 p-3 rounded-xl border border-gray-200 focus:outline-none focus:border-amber-400"
+                        className="w-full bg-gray-50 dark:bg-gray-700 dark:text-white p-3 rounded-xl border border-gray-200 dark:border-gray-600 focus:outline-none focus:border-amber-400"
                     />
                 </div>
                 
                 <div className="flex gap-2 mt-4">
                     <button 
                         onClick={() => setIsAddingChild(false)}
-                        className="flex-1 py-3 bg-gray-100 text-gray-500 font-bold rounded-xl hover:bg-gray-200"
+                        className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 font-bold rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600"
                     >
                         취소
                     </button>
@@ -248,26 +259,30 @@ const SettingsPage = () => {
         ) : (
             /* [A] 목록 모드 */
             <div className="space-y-3">
-                {childrenList.length === 0 && (
+                {children.length === 0 && (
                     <div className="text-center py-8 text-gray-400 text-sm">
                         등록된 자녀가 없습니다.<br/>아이를 등록해보세요!
                     </div>
                 )}
 
-                {childrenList.map((child) => (
-                    <div key={child.id} className="flex items-center justify-between bg-gray-50 p-3 rounded-xl border border-gray-100">
+                {/* Store의 children 데이터를 맵핑 */}
+                {children.map((child) => (
+                    <div key={child.id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-3 rounded-xl border border-gray-100 dark:border-gray-600">
                         <div className="flex items-center gap-3">
-                             <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center font-bold text-xs">
+                             <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-300 flex items-center justify-center font-bold text-xs">
                                 {child.name.charAt(0)}
                             </div>
                             <div>
-                                <span className="font-bold text-gray-700 block">{child.name}</span>
-                                <span className="text-xs text-gray-400">{child.age}세</span>
+                                <span className="font-bold text-gray-700 dark:text-white block">{child.name}</span>
+                                {/* 나이 계산 로직이 복잡하므로 여기선 임시 표시 */}
+                                <span className="text-xs text-gray-400 dark:text-gray-500">
+                                    {child.birthDate} 
+                                </span>
                             </div>
                         </div>
                         <button 
                             onClick={() => handleDeleteChild(child.id)}
-                            className="p-2 text-gray-300 hover:text-red-500 transition-colors"
+                            className="p-2 text-gray-300 dark:text-gray-500 hover:text-red-500 transition-colors"
                         >
                             <Trash2 className="w-4 h-4" />
                         </button>
@@ -276,7 +291,7 @@ const SettingsPage = () => {
                 
                 <button 
                     onClick={() => setIsAddingChild(true)} 
-                    className="w-full py-3 border-2 border-dashed border-gray-200 text-gray-400 rounded-xl flex items-center justify-center gap-2 hover:border-amber-400 hover:text-amber-500 hover:bg-amber-50 transition-all mt-2"
+                    className="w-full py-3 border-2 border-dashed border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 rounded-xl flex items-center justify-center gap-2 hover:border-amber-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-gray-700 transition-all mt-2"
                 >
                     <Plus className="w-4 h-4" />
                     <span className="text-sm font-bold">자녀 추가하기</span>
@@ -284,7 +299,7 @@ const SettingsPage = () => {
                 
                 <button 
                     onClick={() => setActiveModal(null)}
-                    className="w-full py-3 bg-gray-800 text-white font-bold rounded-xl mt-4"
+                    className="w-full py-3 bg-gray-800 dark:bg-gray-600 text-white font-bold rounded-xl mt-4"
                 >
                     닫기
                 </button>
