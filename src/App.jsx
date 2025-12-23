@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react'; 
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { BookOpen, Settings } from 'lucide-react';
 import useStore from './store/useStore'; 
@@ -10,7 +10,9 @@ import RecordPage from './pages/RecordPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import SettingsPage from './pages/SettingsPage';
 import LoginPage from './pages/LoginPage';
-
+import CommunityPage from './pages/CommunityPage';
+import PostWritePage from './pages/PostWritePage';
+import PostDetailPage from './pages/PostDetailPage';
 import SideBar from './components/SideBar'; 
 import BottomNavBar from './components/BottomNavBar';
 import ChatWindow, { FloatingChatButton } from './components/ChatWindow';
@@ -19,7 +21,9 @@ import Header from './components/Header';
 // MainLayout: 사이드바, 헤더, 채팅창이 있는 '메인 화면' 껍데기
 const MainLayout = ({ children }) => {
     return (
-        <div className="h-screen bg-[#F9F8F6] font-sans selection:bg-amber-100 selection:text-amber-900 overflow-hidden flex flex-col md:flex-row">
+        
+        // transition-colors duration-300: 부드러운 색상 전환 효과
+        <div className="h-screen bg-[#F9F8F6] dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans selection:bg-amber-100 selection:text-amber-900 dark:selection:bg-amber-900 dark:selection:text-amber-100 overflow-hidden flex flex-col md:flex-row transition-colors duration-300">
             
             {/* 사이드바 (PC) */}
             <div className="hidden md:block relative z-20 h-full shrink-0"><SideBar /></div>
@@ -30,12 +34,8 @@ const MainLayout = ({ children }) => {
                     <Header />
                 </div>
                 
-                {/* ▼▼▼ [수정됨] 스크롤 통 (여기선 padding을 뺍니다) ▼▼▼ */}
                 <div className="flex-1 overflow-y-auto px-4 md:px-6 lg:px-8 scroll-smooth custom-scrollbar no-scrollbar">
                     
-                    {/* ▼▼▼ [핵심 수정] 여기에 padding을 주고, h-full을 min-h-full로 변경 ▼▼▼ */}
-                    {/* min-h-full: 내용이 적어도 화면 꽉 참, 많으면 늘어남 */}
-                    {/* pb-40: 맨 밑에 물리적인 빈 공간 160px 강제 추가 (메뉴바/챗봇 자리) */}
                     <div className="max-w-6xl mx-auto min-h-full pb-40 md:pb-12 animate-fade-in flex flex-col">
                         <div className="flex-1 flex flex-col">
                             {children}
@@ -65,6 +65,13 @@ const ChatWindowWrapper = () => {
 }
 
 function App() {
+
+  const { initTheme } = useStore();
+
+  useEffect(() => {
+    initTheme();
+  }, [initTheme]);
+
   return (
     <Routes>
         <Route path="/" element={<LoginPage />} />
@@ -75,7 +82,12 @@ function App() {
         <Route path="/record" element={<MainLayout><RecordPage /></MainLayout>} />
         <Route path="/guide" element={<MainLayout><PlaceholderPage title="육아 가이드" icon={BookOpen} color="bg-emerald-400" /></MainLayout>} />
         <Route path="/settings" element={<MainLayout><SettingsPage /></MainLayout>} />
-
+        <Route path="/community" element={<MainLayout><CommunityPage /></MainLayout>} />
+        
+        {/* 주의: 아래 페이지들도 배경색 적용이 필요하다면 MainLayout으로 감싸거나, 개별 페이지에 dark:bg-gray-900을 추가해야 함 */}
+        <Route path="/community/write" element={<PostWritePage />} />
+        <Route path="/community/:id" element={<PostDetailPage />} />
+        
         <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
