@@ -1,48 +1,46 @@
-import React from 'react';
+import React, { useEffect } from 'react'; 
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { BookOpen, Settings } from 'lucide-react';
+import { BookOpen, Settings } from 'lucide-react'; // BookOpen은 이제 안 쓸 수도 있지만 일단 둠
 import useStore from './store/useStore'; 
 
 // 페이지들
 import DashboardPage from './pages/DashboardPage';
 import CalendarPage from './pages/CalendarPage';
 import RecordPage from './pages/RecordPage'; 
+import GuidePage from './pages/GuidePage'; // 👈 [수정 1] 진짜 가이드 페이지 import 추가!
 import PlaceholderPage from './pages/PlaceholderPage';
 import SettingsPage from './pages/SettingsPage';
-
+import LoginPage from './pages/LoginPage';
+import CommunityPage from './pages/CommunityPage';
+import PostWritePage from './pages/PostWritePage';
+import PostDetailPage from './pages/PostDetailPage';
 import SideBar from './components/SideBar'; 
 import BottomNavBar from './components/BottomNavBar';
 import ChatWindow, { FloatingChatButton } from './components/ChatWindow';
 import Header from './components/Header';
 
+// MainLayout: 사이드바, 헤더, 채팅창이 있는 '메인 화면' 껍데기
 const MainLayout = ({ children }) => {
     return (
-        <div className="h-screen bg-[#FDFCF8] font-sans selection:bg-amber-100 selection:text-amber-900 overflow-hidden flex flex-col md:flex-row">
-            {/* 배경 효과 */}
-            <div className="fixed top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
-                <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] bg-amber-200/20 rounded-full blur-[120px]"></div>
-                <div className="absolute top-[20%] right-[0%] w-[40%] h-[40%] bg-purple-200/20 rounded-full blur-[120px]"></div>
-                <div className="absolute bottom-[0%] left-[20%] w-[30%] h-[30%] bg-pink-200/20 rounded-full blur-[100px]"></div>
-            </div>
-
+        <div className="h-screen bg-[#F9F8F6] dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans selection:bg-amber-100 selection:text-amber-900 dark:selection:bg-amber-900 dark:selection:text-amber-100 overflow-hidden flex flex-col md:flex-row transition-colors duration-300">
+            
             {/* 사이드바 (PC) */}
             <div className="hidden md:block relative z-20 h-full shrink-0"><SideBar /></div>
             
             {/* 메인 콘텐츠 영역 */}
             <main className="flex-1 relative z-10 h-full overflow-hidden flex flex-col">
-                
-                {/* 헤더 고정 */}
                 <div className="shrink-0 px-4 pt-2 md:px-6 md:pt-4 lg:px-8 lg:pt-6 pb-0 z-30">
                     <Header />
                 </div>
-
-                {/* 실제 페이지 내용 */}
-                <div className="flex-1 overflow-y-auto px-4 md:px-6 lg:px-8 pb-4 scroll-smooth custom-scrollbar">
-                    <div className="max-w-6xl mx-auto h-full animate-fade-in flex flex-col">
-                        <div className="flex-1 min-h-0 flex flex-col">
+                
+                <div className="flex-1 overflow-y-auto px-4 md:px-6 lg:px-8 scroll-smooth custom-scrollbar no-scrollbar">
+                    
+                    <div className="max-w-6xl mx-auto min-h-full pb-40 md:pb-12 animate-fade-in flex flex-col">
+                        <div className="flex-1 flex flex-col">
                             {children}
                         </div>
                     </div>
+
                 </div>
             </main>
             
@@ -66,15 +64,32 @@ const ChatWindowWrapper = () => {
 }
 
 function App() {
+
+  const { initTheme } = useStore();
+
+  useEffect(() => {
+    initTheme();
+  }, [initTheme]);
+
   return (
     <Routes>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/" element={<LoginPage />} />
+        <Route path="/login" element={<LoginPage />} />
+
         <Route path="/dashboard" element={<MainLayout><DashboardPage /></MainLayout>} />
         <Route path="/calendar" element={<MainLayout><CalendarPage /></MainLayout>} />
         <Route path="/record" element={<MainLayout><RecordPage /></MainLayout>} />
-        <Route path="/guide" element={<MainLayout><PlaceholderPage title="육아 가이드" icon={BookOpen} color="bg-emerald-400" /></MainLayout>} />
+        
+        {/* 👇 [수정 2] PlaceholderPage를 빼고 진짜 GuidePage로 교체! */}
+        <Route path="/guide" element={<MainLayout><GuidePage /></MainLayout>} /> 
+        
         <Route path="/settings" element={<MainLayout><SettingsPage /></MainLayout>} />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/community" element={<MainLayout><CommunityPage /></MainLayout>} />
+        
+        <Route path="/community/write" element={<PostWritePage />} />
+        <Route path="/community/:id" element={<PostDetailPage />} />
+        
+        <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

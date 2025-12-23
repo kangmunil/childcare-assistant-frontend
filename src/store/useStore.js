@@ -3,23 +3,24 @@ import { persist } from 'zustand/middleware';
 
 const useStore = create(
   persist(
-    (set) => ({
+    (set, get) => ({
       // ==========================================
       // 1. 앱 전역 상태
       // ==========================================
       activePage: 'dashboard',
       isLoggedIn: false, 
       user: null,        
+      isDarkMode: false, // 기본은 라이트 모드
 
       // ==========================================
-      // 2. 챗봇 제어 상태 (수정됨)
+      // 2. 챗봇 제어 상태
       // ==========================================
       isChatOpen: false,       // 챗봇 열림/닫힘 여부
-      initialChatQuery: '',    // 퀵 버튼 클릭 시 전달할 초기 질문
+      chatQuery: '',           // 퀵 버튼 클릭 시 전달할 초기 질문
       isAiThinking: false,     // AI 응답 대기 상태
 
       // ==========================================
-      // 3. 자녀 데이터
+      // 3. 자녀 데이터 (기본 더미 데이터)
       // ==========================================
       children: [
         { id: 1, name: '지우', birthDate: '2025-06-20', gender: 'female', photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Jiu' },
@@ -28,13 +29,37 @@ const useStore = create(
       activeChildId: 1,
 
       trackerData: {
-        feeding: '850', // 모유/분유량
-        pumping: '120', // 유축량
-        sleep: '12',    // 수면 시간
+        feeding: '850', // 모유/분유량 (ml)
+        pumping: '120', // 유축량 (ml)
+        sleep: '12',    // 수면 시간 (hr)
         diaper: '6'     // 기저귀 횟수
       },
-      currentStatus: 'play',
+      currentStatus: 'play', // play, sleep, feeding, etc.
+      
       setCurrentStatus: (status) => set({ currentStatus: status }),
+      
+      // 다크 모드 토글 (HTML 클래스 제어 포함)
+      toggleDarkMode: () => {
+        const newMode = !get().isDarkMode;
+        set({ isDarkMode: newMode });
+        
+        // 중요: Tailwind CSS 적용을 위해 HTML 태그에 직접 class를 제어함
+        if (newMode) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      },
+
+      // 앱 초기화 시 테마 적용 (새로고침 대응용)
+      initTheme: () => {
+        const { isDarkMode } = get();
+        if (isDarkMode) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+      },
 
       // ==========================================
       // 4. 성장 기록 데이터
@@ -77,19 +102,22 @@ const useStore = create(
       setActivePage: (page) => set({ activePage: page }),
       setActiveChild: (id) => set({ activeChildId: id }),
       
-      // [수정됨] 챗봇 관련 액션
+      // 챗봇 열기/닫기 토글
       toggleChat: () => set((state) => ({ isChatOpen: !state.isChatOpen })),
       
-      // ★ 핵심: 질문을 가지고 챗봇 열기 (퀵 버튼용)
+      // 질문을 가지고 챗봇 열기 (대시보드 퀵버튼용)
       openChatWithQuery: (query) => set({ 
           isChatOpen: true, 
-          initialChatQuery: query 
+          chatQuery: query 
       }),
+
+      // 질문 초기화 함수 (ChatWindow에서 사용)
+      setChatQuery: (query) => set({ chatQuery: query }),
 
       // 챗봇 닫기 (닫을 때 쿼리 초기화)
       closeChat: () => set({ 
           isChatOpen: false, 
-          initialChatQuery: '' 
+          chatQuery: '' 
       }),
 
       // 자녀 추가
@@ -121,21 +149,47 @@ const useStore = create(
       clearNotifications: () => set({ notifications: [] }),
 
       // 기타 기능
-      logout: () => set({ isLoggedIn: false, user: null, activePage: 'dashboard' }),
+      logout: () => {
+        set({ isLoggedIn: false, user: null, activePage: 'dashboard' });
+        // 로그아웃 시 다크 모드 해제 여부는 선택사항 (여기선 유지함)
+      },
       
-      // 채팅 메시지 추가
+      // 채팅 메시지 추가 (User)
       addUserMessage: (text) => set((state) => ({ 
           messages: [...state.messages, { id: Date.now(), role: 'user', text }] 
       })),
       
-      // AI 응답 시뮬레이션 (나중에 API 연동 시 교체)
+      // AI 응답 시뮬레이션 로직 (키워드 답변)
       generateAiResponse: async () => { 
           set({ isAiThinking: true });
-          await new Promise(r => setTimeout(r, 1000));
-          set({ isAiThinking: false });
-          // 실제 응답 추가 로직은 ChatWindow 컴포넌트에서 처리하거나 여기서 확장 가능
+          
+          // 1.5초 생각하는 척 (로딩 애니메이션용)
+          await new Promise(r => setTimeout(r, 1500));
+          
+          // 사용자의 마지막 질문 가져오기
+          const messages = get().messages;
+          const lastUserMsg = messages[messages.length - 1]?.text || "";
+          
+          let aiText = "제가 답변드릴 수 있는 육아 정보가 아직 부족해요. 더 열심히 공부할게요! 📚";
+
+          // 간단한 키워드 매칭 로직 (데모용)
+          if (lastUserMsg.includes('예방접종')) {
+              aiText = "다음 예방접종은 'B형 간염 3차'와 'DTaP 3차'입니다. 6개월 검진과 함께 소아과 예약을 추천드려요!";
+          } else if (lastUserMsg.includes('이유식')) {
+              aiText = "지금 시기(185일)에는 소고기 미음을 시작하는 게 좋습니다. 철분 보충을 위해 매일 소고기 10g을 섭취하도록 해주세요.";
+          } else if (lastUserMsg.includes('발달')) {
+              aiText = "이 시기 아이들은 뒤집기를 능숙하게 하고, 배밀이를 시도할 수 있어요. 낯가림이 시작될 수도 있답니다.";
+          } else if (lastUserMsg.includes('수면')) {
+              aiText = "수면 교육은 '퍼버법'이나 '안눕법'을 시도해 볼 수 있습니다. 일관된 수면 의식을 만들어주는 게 가장 중요해요!";
+          }
+
+          set((state) => ({
+            isAiThinking: false,
+            messages: [...state.messages, { id: Date.now() + 1, role: 'ai', text: aiText }]
+          }));
       },
       
+      // 트래커 데이터 업데이트
       updateTrackerData: (key, value) => set((state) => ({
         trackerData: {
           ...state.trackerData,
@@ -144,7 +198,7 @@ const useStore = create(
       })),
     }),
     {
-      name: 'bebehelper-storage',
+      name: 'bebehelper-storage', // LocalStorage Key Name
     }
   )
 );
