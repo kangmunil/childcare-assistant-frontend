@@ -1,12 +1,13 @@
 import React, { useEffect } from 'react'; 
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { BookOpen, Settings } from 'lucide-react';
+import { BookOpen, Settings } from 'lucide-react'; // BookOpen은 이제 안 쓸 수도 있지만 일단 둠
 import useStore from './store/useStore'; 
 
 // 페이지들
 import DashboardPage from './pages/DashboardPage';
 import CalendarPage from './pages/CalendarPage';
 import RecordPage from './pages/RecordPage'; 
+import GuidePage from './pages/GuidePage'; // 👈 [수정 1] 진짜 가이드 페이지 import 추가!
 import PlaceholderPage from './pages/PlaceholderPage';
 import SettingsPage from './pages/SettingsPage';
 import LoginPage from './pages/LoginPage';
@@ -21,8 +22,6 @@ import Header from './components/Header';
 // MainLayout: 사이드바, 헤더, 채팅창이 있는 '메인 화면' 껍데기
 const MainLayout = ({ children }) => {
     return (
-        
-        // transition-colors duration-300: 부드러운 색상 전환 효과
         <div className="h-screen bg-[#F9F8F6] dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans selection:bg-amber-100 selection:text-amber-900 dark:selection:bg-amber-900 dark:selection:text-amber-100 overflow-hidden flex flex-col md:flex-row transition-colors duration-300">
             
             {/* 사이드바 (PC) */}
@@ -80,11 +79,13 @@ function App() {
         <Route path="/dashboard" element={<MainLayout><DashboardPage /></MainLayout>} />
         <Route path="/calendar" element={<MainLayout><CalendarPage /></MainLayout>} />
         <Route path="/record" element={<MainLayout><RecordPage /></MainLayout>} />
-        <Route path="/guide" element={<MainLayout><PlaceholderPage title="육아 가이드" icon={BookOpen} color="bg-emerald-400" /></MainLayout>} />
+        
+        {/* 👇 [수정 2] PlaceholderPage를 빼고 진짜 GuidePage로 교체! */}
+        <Route path="/guide" element={<MainLayout><GuidePage /></MainLayout>} /> 
+        
         <Route path="/settings" element={<MainLayout><SettingsPage /></MainLayout>} />
         <Route path="/community" element={<MainLayout><CommunityPage /></MainLayout>} />
         
-        {/* 주의: 아래 페이지들도 배경색 적용이 필요하다면 MainLayout으로 감싸거나, 개별 페이지에 dark:bg-gray-900을 추가해야 함 */}
         <Route path="/community/write" element={<PostWritePage />} />
         <Route path="/community/:id" element={<PostDetailPage />} />
         
