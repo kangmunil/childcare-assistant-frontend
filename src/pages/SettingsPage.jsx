@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, User, Shield, HelpCircle, LogOut, ChevronRight, Moon, Volume2, X, Plus, Trash2 } from 'lucide-react';
+import { Bell, User, Shield, HelpCircle, LogOut, ChevronRight, Moon, Volume2, X, Plus, Trash2, AlertTriangle } from 'lucide-react';
 import useStore from '../store/useStore'; 
 
-// [1] 재사용 가능한 공통 모달 컴포넌트 (다크모드 적용됨)
+// [1] 재사용 가능한 공통 모달 컴포넌트
 const CommonModal = ({ isOpen, onClose, title, children }) => {
   if (!isOpen) return null;
 
@@ -31,51 +31,116 @@ const CommonModal = ({ isOpen, onClose, title, children }) => {
 const SettingsPage = () => {
   const navigate = useNavigate();
   
-  // [Store 연결] 전역 상태 가져오기
+  // [Store 연결] 전역 상태 및 API 함수 가져오기
   const { 
     user, 
     logout, 
+    updateUserInfo, // 내 정보 수정 API
+    withdrawMember, // 회원 탈퇴 API
     isDarkMode, 
     toggleDarkMode,
-    children,    // 전역 자녀 리스트
-    addChild     // 자녀 추가 액션
+    children,    
+    addChild,       // 자녀 등록 API
+    deleteChild     // 자녀 삭제 API
   } = useStore();
   
   // --- 로컬 UI 상태 ---
-  const [notifications, setNotifications] = useState(true); // 알림 토글은 로컬 유지(예시)
+  const [notifications, setNotifications] = useState(true); 
   const [activeModal, setActiveModal] = useState(null); 
   
-  // 프로필 수정용 임시 상태
-  const [tempName, setTempName] = useState(user?.name || '김아빠');
+  // 프로필 수정용 상태
+  const [tempName, setTempName] = useState('');
+
+  // 모달 열릴 때 user 정보로 초기화
+  useEffect(() => {
+    if (activeModal === 'profile' && user) {
+        setTempName(user.name || '');
+    }
+  }, [activeModal, user]);
 
   // 자녀 추가 모드 상태
   const [isAddingChild, setIsAddingChild] = useState(false);
   const [newChildInput, setNewChildInput] = useState({ name: '', age: '' });
 
   // --- 핸들러 함수들 ---
-  const handleSaveNewChild = () => {
+
+  // 1. 프로필 저장 (API 호출)
+  const handleSaveProfile = async () => {
+    if (!tempName.trim()) {
+        alert("닉네임을 입력해주세요.");
+        return;
+    }
+
+    // 백엔드 API 호출
+    const result = await updateUserInfo({ 
+        name: tempName,
+        email: user?.email 
+    });
+
+    if (result.success) {
+        alert("정보가 수정되었습니다.");
+        setActiveModal(null);
+    } else {
+        alert(`수정 실패: ${result.message}`);
+    }
+  };
+
+  // 2. 회원 탈퇴 (API 호출)
+  const handleWithdraw = async () => {
+    if (window.confirm('정말 탈퇴하시겠습니까?\n모든 데이터가 삭제되며 복구할 수 없습니다.')) {
+        const result = await withdrawMember();
+        
+        if (result.success) {
+            alert('탈퇴 처리되었습니다. 이용해 주셔서 감사합니다.');
+            navigate('/login');
+        } else {
+            // 실패 시 (예: 자녀가 남아있음)
+            alert(`탈퇴 실패: ${result.message}`);
+        }
+    }
+  };
+
+  // 3. 자녀 추가 (API 호출)
+  const handleSaveNewChild = async () => {
     if (!newChildInput.name || !newChildInput.age) {
         alert('이름과 나이를 모두 입력해주세요.');
         return;
     }
-    
-    // [Store Action] 전역 상태에 자녀 추가
-    addChild({
+
+    // 나이를 기반으로 생년월일 계산 (YYYY-MM-DD 형식)
+    const birthYear = new Date().getFullYear() - parseInt(newChildInput.age);
+    const calculatedBirthDay = `${birthYear}-01-01`; 
+
+    // API 호출
+    const result = await addChild({
         name: newChildInput.name,
-        // 나이는 number로 변환, 임시로 birthDate 등은 현재 기준으로 처리하거나 생략
-        birthDate: `${new Date().getFullYear() - newChildInput.age}-01-01`, 
-        gender: 'unknown' 
+        birthDay: calculatedBirthDay,
+        // 명세서 필수값 (추후 UI 추가 가능)
+        birthTime: "09:00", 
+        gender: "M", 
+        height: 50, 
+        weight: 3.5 
     });
 
-    // 초기화 및 모달 닫기
-    setNewChildInput({ name: '', age: '' });
-    setIsAddingChild(false);
+    if (result.success) {
+        alert("자녀가 등록되었습니다.");
+        setNewChildInput({ name: '', age: '' });
+        setIsAddingChild(false);
+    } else {
+        alert(`등록 실패: ${result.message}`);
+    }
   };
 
-  const handleDeleteChild = (id) => {
-    // 현재 Store에는 deleteChild 액션이 없으므로 알림으로 대체
-    // 필요 시 useStore에 removeChild 액션 추가 필요
-    alert("자녀 삭제 기능은 데이터 안전을 위해 준비 중입니다."); 
+  // 4. 자녀 삭제 (API 호출)
+  const handleDeleteChild = async (childId) => {
+    if (window.confirm("정말 이 자녀 정보를 삭제하시겠습니까?")) {
+        const result = await deleteChild(childId);
+        if (result.success) {
+            alert("삭제되었습니다.");
+        } else {
+            alert(`삭제 실패: ${result.message}`);
+        }
+    }
   };
 
   const handleLogout = () => {
@@ -95,16 +160,16 @@ const SettingsPage = () => {
     </div>
   );
 
-  const MenuItem = ({ icon: Icon, label, value, onClick, isToggle, toggleState, onToggle }) => (
+  const MenuItem = ({ icon: Icon, label, value, onClick, isToggle, toggleState, onToggle, isDanger }) => (
     <div 
         onClick={isToggle ? undefined : onClick}
         className={`flex items-center justify-between p-4 border-b border-gray-50 dark:border-gray-700 last:border-0 ${!isToggle && 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750'} transition-colors`}
     >
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-300">
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isDanger ? 'bg-red-100 dark:bg-red-900/30 text-red-500' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300'}`}>
             <Icon className="w-4 h-4" />
         </div>
-        <span className="text-gray-700 dark:text-gray-200 font-medium">{label}</span>
+        <span className={`font-medium ${isDanger ? 'text-red-500' : 'text-gray-700 dark:text-gray-200'}`}>{label}</span>
       </div>
       
       {isToggle ? (
@@ -138,7 +203,7 @@ const SettingsPage = () => {
         <MenuItem 
             icon={Shield} 
             label="자녀 관리" 
-            value={`${children.length}명`} // Store 데이터 사용
+            value={`${children.length}명`} 
             onClick={() => setActiveModal('children')} 
         />
       </Section>
@@ -155,8 +220,8 @@ const SettingsPage = () => {
             icon={Moon} 
             label="다크 모드 (수유 모드)" 
             isToggle 
-            toggleState={isDarkMode}     // Store 상태 연결
-            onToggle={toggleDarkMode}    // Store 액션 연결
+            toggleState={isDarkMode}    
+            onToggle={toggleDarkMode}   
         />
          <MenuItem 
             icon={Volume2} 
@@ -169,10 +234,12 @@ const SettingsPage = () => {
       <Section title="기타">
         <MenuItem icon={HelpCircle} label="도움말 / 문의하기" onClick={() => {}} />
         <MenuItem icon={LogOut} label="로그아웃" onClick={handleLogout} />
+        {/* 회원 탈퇴 메뉴 (빨간색) */}
+        <MenuItem icon={AlertTriangle} label="회원 탈퇴" onClick={handleWithdraw} isDanger={true} />
       </Section>
       
       <div className="text-center text-xs text-gray-300 dark:text-gray-600 mt-8 mb-4">
-        현재 버전 v1.0.0
+        BebeHelper v1.0.0
       </div>
     </div>
 
@@ -194,12 +261,19 @@ const SettingsPage = () => {
                     className="w-full bg-gray-50 dark:bg-gray-700 dark:text-white p-3 rounded-xl border border-gray-200 dark:border-gray-600 focus:outline-none focus:border-amber-400 transition-colors"
                 />
             </div>
+            {/* 이메일은 수정 불가 (읽기 전용) */}
+            <div>
+                <label className="block text-xs font-bold text-gray-400 mb-1">이메일</label>
+                <input 
+                    type="text" 
+                    value={user?.email || ''} 
+                    disabled
+                    className="w-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-500 p-3 rounded-xl border border-gray-100 dark:border-gray-700 cursor-not-allowed"
+                />
+            </div>
+
             <button 
-                onClick={() => {
-                    // 추후 Store에 updateUserName 액션 추가 필요
-                    alert('저장되었습니다 (UI only).');
-                    setActiveModal(null);
-                }}
+                onClick={handleSaveProfile}
                 className="w-full py-3 bg-amber-400 text-white font-bold rounded-xl hover:bg-amber-500 transition-colors mt-4"
             >
                 저장하기
@@ -265,16 +339,14 @@ const SettingsPage = () => {
                     </div>
                 )}
 
-                {/* Store의 children 데이터를 맵핑 */}
                 {children.map((child) => (
                     <div key={child.id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-3 rounded-xl border border-gray-100 dark:border-gray-600">
                         <div className="flex items-center gap-3">
                              <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-300 flex items-center justify-center font-bold text-xs">
                                 {child.name.charAt(0)}
-                            </div>
-                            <div>
+                             </div>
+                             <div>
                                 <span className="font-bold text-gray-700 dark:text-white block">{child.name}</span>
-                                {/* 나이 계산 로직이 복잡하므로 여기선 임시 표시 */}
                                 <span className="text-xs text-gray-400 dark:text-gray-500">
                                     {child.birthDate} 
                                 </span>
