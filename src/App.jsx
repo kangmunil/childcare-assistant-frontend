@@ -1,19 +1,22 @@
 import React, { useEffect } from 'react'; 
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { BookOpen, Settings } from 'lucide-react'; // BookOpen은 이제 안 쓸 수도 있지만 일단 둠
+import { BookOpen } from 'lucide-react'; 
 import useStore from './store/useStore'; 
 
 // 페이지들
 import DashboardPage from './pages/DashboardPage';
 import CalendarPage from './pages/CalendarPage';
 import RecordPage from './pages/RecordPage'; 
-import GuidePage from './pages/GuidePage'; // 👈 [수정 1] 진짜 가이드 페이지 import 추가!
+import GuidePage from './pages/GuidePage'; 
 import PlaceholderPage from './pages/PlaceholderPage';
 import SettingsPage from './pages/SettingsPage';
 import LoginPage from './pages/LoginPage';
+import SignupPage from './pages/SignupPage';
 import CommunityPage from './pages/CommunityPage';
 import PostWritePage from './pages/PostWritePage';
 import PostDetailPage from './pages/PostDetailPage';
+import ChildSetupPage from './pages/ChildSetupPage'; // 자녀 등록 페이지
+
 import SideBar from './components/SideBar'; 
 import BottomNavBar from './components/BottomNavBar';
 import ChatWindow, { FloatingChatButton } from './components/ChatWindow';
@@ -73,16 +76,17 @@ function App() {
 
   return (
     <Routes>
+        {/* --- 인증 관련 (Layout 없음) --- */}
         <Route path="/" element={<LoginPage />} />
         <Route path="/login" element={<LoginPage />} />
-
+        <Route path="/signup" element={<SignupPage />} /> {/* 👈 [추가 2] 여기! */}
+        <Route path="/child-setup" element={<ChildSetupPage />} />
+        
+        {/* --- 메인 앱 (Layout 적용) --- */}
         <Route path="/dashboard" element={<MainLayout><DashboardPage /></MainLayout>} />
         <Route path="/calendar" element={<MainLayout><CalendarPage /></MainLayout>} />
         <Route path="/record" element={<MainLayout><RecordPage /></MainLayout>} />
-        
-        {/* 👇 [수정 2] PlaceholderPage를 빼고 진짜 GuidePage로 교체! */}
         <Route path="/guide" element={<MainLayout><GuidePage /></MainLayout>} /> 
-        
         <Route path="/settings" element={<MainLayout><SettingsPage /></MainLayout>} />
         <Route path="/community" element={<MainLayout><CommunityPage /></MainLayout>} />
         
