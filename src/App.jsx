@@ -1,19 +1,22 @@
 import React, { useEffect } from 'react'; 
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { BookOpen, Settings } from 'lucide-react'; // BookOpen은 이제 안 쓸 수도 있지만 일단 둠
+import { BookOpen } from 'lucide-react'; 
 import useStore from './store/useStore'; 
 
 // 페이지들
 import DashboardPage from './pages/DashboardPage';
 import CalendarPage from './pages/CalendarPage';
 import RecordPage from './pages/RecordPage'; 
-import GuidePage from './pages/GuidePage'; // 👈 [수정 1] 진짜 가이드 페이지 import 추가!
+import GuidePage from './pages/GuidePage'; 
 import PlaceholderPage from './pages/PlaceholderPage';
 import SettingsPage from './pages/SettingsPage';
 import LoginPage from './pages/LoginPage';
+import SignupPage from './pages/SignupPage';
 import CommunityPage from './pages/CommunityPage';
 import PostWritePage from './pages/PostWritePage';
 import PostDetailPage from './pages/PostDetailPage';
+import ChildSetupPage from './pages/ChildSetupPage'; 
+
 import SideBar from './components/SideBar'; 
 import BottomNavBar from './components/BottomNavBar';
 import ChatWindow, { FloatingChatButton } from './components/ChatWindow';
@@ -64,25 +67,40 @@ const ChatWindowWrapper = () => {
 }
 
 function App() {
-
-  const { initTheme } = useStore();
+  // 필요한 액션들 가져오기
+  const { initTheme, checkSession, fetchUserInfo } = useStore();
 
   useEffect(() => {
-    initTheme();
-  }, [initTheme]);
+    initTheme(); // 테마 초기화
+
+    // 앱 시작 시 로그인 체크 및 정보 갱신 로직 추가
+    const initApp = async () => {
+      // 1. 세션 복구 (새로고침 해도 로그인 유지)
+      await checkSession(); 
+      
+      // 2. 로그인이 확인되면 백엔드에서 최신 유저 정보(이름 등) 가져오기
+      // (useStore.getState()를 쓰면 가장 최신 상태를 확실하게 가져올 수 있음)
+      if (useStore.getState().isLoggedIn) {
+        fetchUserInfo();
+      }
+    };
+
+    initApp();
+  }, [initTheme, checkSession, fetchUserInfo]);
 
   return (
     <Routes>
+        {/* --- 인증 관련 (Layout 없음) --- */}
         <Route path="/" element={<LoginPage />} />
         <Route path="/login" element={<LoginPage />} />
-
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/child-setup" element={<ChildSetupPage />} />
+        
+        {/* --- 메인 앱 (Layout 적용) --- */}
         <Route path="/dashboard" element={<MainLayout><DashboardPage /></MainLayout>} />
         <Route path="/calendar" element={<MainLayout><CalendarPage /></MainLayout>} />
         <Route path="/record" element={<MainLayout><RecordPage /></MainLayout>} />
-        
-        {/* 👇 [수정 2] PlaceholderPage를 빼고 진짜 GuidePage로 교체! */}
         <Route path="/guide" element={<MainLayout><GuidePage /></MainLayout>} /> 
-        
         <Route path="/settings" element={<MainLayout><SettingsPage /></MainLayout>} />
         <Route path="/community" element={<MainLayout><CommunityPage /></MainLayout>} />
         
