@@ -101,7 +101,7 @@ const CommunityPage = () => {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95 }}
                     transition={{ duration: 0.2 }}
-                    onClick={() => navigate(`/community/${post.id}`)}
+                    onClick={() => navigate(`/community/${post.id}`)}                    
                     className="bg-white p-5 rounded-2xl border border-stone-100 shadow-sm hover:shadow-md transition-shadow cursor-pointer active:scale-[0.98] active:bg-stone-50"
                 >
                     <div className="flex justify-between items-start mb-3">
