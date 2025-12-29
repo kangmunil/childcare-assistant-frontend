@@ -15,7 +15,7 @@ import SignupPage from './pages/SignupPage';
 import CommunityPage from './pages/CommunityPage';
 import PostWritePage from './pages/PostWritePage';
 import PostDetailPage from './pages/PostDetailPage';
-import ChildSetupPage from './pages/ChildSetupPage'; // 자녀 등록 페이지
+import ChildSetupPage from './pages/ChildSetupPage'; 
 
 import SideBar from './components/SideBar'; 
 import BottomNavBar from './components/BottomNavBar';
@@ -67,19 +67,33 @@ const ChatWindowWrapper = () => {
 }
 
 function App() {
-
-  const { initTheme } = useStore();
+  // 필요한 액션들 가져오기
+  const { initTheme, checkSession, fetchUserInfo } = useStore();
 
   useEffect(() => {
-    initTheme();
-  }, [initTheme]);
+    initTheme(); // 테마 초기화
+
+    // 앱 시작 시 로그인 체크 및 정보 갱신 로직 추가
+    const initApp = async () => {
+      // 1. 세션 복구 (새로고침 해도 로그인 유지)
+      await checkSession(); 
+      
+      // 2. 로그인이 확인되면 백엔드에서 최신 유저 정보(이름 등) 가져오기
+      // (useStore.getState()를 쓰면 가장 최신 상태를 확실하게 가져올 수 있음)
+      if (useStore.getState().isLoggedIn) {
+        fetchUserInfo();
+      }
+    };
+
+    initApp();
+  }, [initTheme, checkSession, fetchUserInfo]);
 
   return (
     <Routes>
         {/* --- 인증 관련 (Layout 없음) --- */}
         <Route path="/" element={<LoginPage />} />
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<SignupPage />} /> {/* 👈 [추가 2] 여기! */}
+        <Route path="/signup" element={<SignupPage />} />
         <Route path="/child-setup" element={<ChildSetupPage />} />
         
         {/* --- 메인 앱 (Layout 적용) --- */}
