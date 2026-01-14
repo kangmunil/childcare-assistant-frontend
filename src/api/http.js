@@ -1,25 +1,39 @@
 import axios from 'axios';
+import { supabase } from './supabase';
 
 const http = axios.create({
-  baseURL: 'http://localhost:8080/api', 
+  baseURL: import.meta.env.VITE_API_BASE_URL + '/api',
   timeout: 5000,
 });
 
-// 요청 나갈 때마다 토큰 납치해서 헤더에 넣기
-http.interceptors.request.use((config) => {
-  // 로컬 스토리지에서 zustand가 저장한 데이터 꺼내기 (직접 접근이 가장 안전)
-  // 이름 'bebehelper-storage'는 useStore의 persist name과 같아야 함
-  const storage = localStorage.getItem('bebehelper-storage');
-  
-  if (storage) {
-    const parsed = JSON.parse(storage);
-    const token = parsed.state?.token; // 토큰 꺼내기
-    
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+// 요청 인터셉터: Supabase 세션 토큰을 헤더에 추가
+http.interceptors.request.use(async (config) => {
+  try {
+    // Supabase에서 현재 세션 가져오기
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (session?.access_token) {
+      config.headers.Authorization = `Bearer ${session.access_token}`;
     }
+  } catch (error) {
+    console.error('토큰 가져오기 실패:', error);
   }
+
   return config;
 });
+
+// 응답 인터셉터: 401 에러 시 로그아웃 처리
+http.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error.response?.status === 401) {
+      // 토큰 만료 또는 인증 실패 시 로그아웃
+      console.warn('인증 만료: 로그아웃 처리');
+      await supabase.auth.signOut();
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
 
 export default http;
