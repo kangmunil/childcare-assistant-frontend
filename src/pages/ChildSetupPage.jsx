@@ -23,22 +23,22 @@ const ChildSetupPage = () => {
 
     setIsLoading(true);
 
-    // [시뮬레이션] 1. 백엔드 API (POST /api/children) 호출해야 하는 곳
-    // 지금은 스토어에 바로 추가하는 걸로 대체 (데모용)
-    await new Promise(resolve => setTimeout(resolve, 800)); // 0.8초 딜레이
-    
-    // 2. 스토어 상태 업데이트
-    addChild({
+    // 백엔드 API 호출 (POST /api/children)
+    const result = await addChild({
       name: childData.name,
-      birthDate: childData.birthDate,
-      gender: childData.gender
+      birthDay: childData.birthDate, // API 필드명: birthDay
+      gender: childData.gender === 'male' ? 'M' : 'F'
     });
 
-    // 3. 설정 끝! 대시보드로 이동
-    alert(`${childData.name}의 등록이 완료되었습니다! 환영해요 🎉`);
-    navigate('/dashboard');
-    
     setIsLoading(false);
+
+    // 결과 확인 후 처리
+    if (result.success) {
+      alert(`${childData.name}의 등록이 완료되었습니다! 환영해요 🎉`);
+      navigate('/dashboard');
+    } else {
+      alert(`${result.message}`);
+    }
   };
 
   return (

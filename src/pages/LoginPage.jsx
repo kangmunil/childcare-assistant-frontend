@@ -1,24 +1,26 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 import useStore from '../store/useStore';
-import { authApi } from '../api/authApi';
 
 const LoginPage = () => {
-  const { loginSuccess, socialLogin } = useStore();
+  const { signInWithPassword, signInWithOAuth } = useAuth();
   const navigate = useNavigate();
-  
+
   // 입력값 관리
   const [formData, setFormData] = useState({
-    id: '',
+    email: '',
     password: ''
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
   // 입력 핸들러
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+    setError(''); // 입력 시 에러 초기화
   };
 
   const handleLoginNavigation = () => {
@@ -32,69 +34,71 @@ const LoginPage = () => {
     }
   };
 
-  // 1. 진짜 로그인 핸들러 (ID/PW - API 호출)
-  const handleRealLogin = async (e) => {
+  // 이메일/비밀번호 로그인 (Supabase)
+  const handleEmailLogin = async (e) => {
     e.preventDefault();
     if (isLoading) return;
 
-    if (!formData.id || !formData.password) {
-      alert("아이디와 비밀번호를 모두 입력해주세요.");
+    if (!formData.email || !formData.password) {
+      setError('이메일과 비밀번호를 모두 입력해주세요.');
       return;
     }
 
     setIsLoading(true);
+    setError('');
 
     try {
-      // 백엔드 API 호출
-      const response = await authApi.login({
-        id: formData.id,
-        password: formData.password
-      });
+      await signInWithPassword(formData.email, formData.password);
 
-      // 응답 확인
-      if (response.status === 'success' && response.data) {
-        const { user, accessToken } = response.data;
-        
-        // 스토어 업데이트
-        loginSuccess(user, accessToken);
+      // 로그인 성공 - 자녀 목록 확인 후 리다이렉트
+      await useStore.getState().fetchChildren();
+      handleLoginNavigation();
 
-        handleLoginNavigation();
-        
+    } catch (err) {
+      console.error('로그인 에러:', err);
+      // Supabase 에러 메시지 변환
+      if (err.message.includes('Invalid login credentials')) {
+        setError('이메일 또는 비밀번호가 올바르지 않습니다.');
+      } else if (err.message.includes('Email not confirmed')) {
+        setError('이메일 인증이 필요합니다. 메일함을 확인해주세요.');
       } else {
-        throw new Error(response.message || "로그인 실패");
+        setError(err.message || '로그인에 실패했습니다.');
       }
-
-    } catch (error) {
-      console.error("로그인 에러:", error);
-      const errorMsg = error.response?.data?.message || "아이디 또는 비밀번호를 확인해주세요.";
-      alert(errorMsg);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 2. 구글 로그인 핸들러 (데모용)
-  const handleGoogleDemoLogin = async () => {
+  // 구글 로그인 (Supabase OAuth)
+  const handleGoogleLogin = async () => {
     if (isLoading) return;
     setIsLoading(true);
-    
-    await socialLogin('google'); // 가짜 로그인 실행
+    setError('');
 
-    handleLoginNavigation();
-    
-    setIsLoading(false);
+    try {
+      await signInWithOAuth('google');
+      // OAuth는 리다이렉트되므로 여기서 추가 처리 불필요
+    } catch (err) {
+      console.error('구글 로그인 에러:', err);
+      setError('구글 로그인에 실패했습니다.');
+      setIsLoading(false);
+    }
   };
 
-  // 3. 카카오 로그인 핸들러 (데모용)
-  const handleKakaoDemoLogin = async () => {
+  // 카카오 로그인 (Supabase OAuth)
+  const handleKakaoLogin = async () => {
     if (isLoading) return;
     setIsLoading(true);
-    
-    await socialLogin('kakao'); // 가짜 로그인 실행
+    setError('');
 
-    handleLoginNavigation();
-    
-    setIsLoading(false);
+    try {
+      await signInWithOAuth('kakao');
+      // OAuth는 리다이렉트되므로 여기서 추가 처리 불필요
+    } catch (err) {
+      console.error('카카오 로그인 에러:', err);
+      setError('카카오 로그인에 실패했습니다.');
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -114,24 +118,31 @@ const LoginPage = () => {
 
        {/* 로그인 폼 영역 */}
        <div className="w-full max-w-xs z-10 space-y-4">
-           
-           {/* ID/PW 입력 폼 */}
-           <form onSubmit={handleRealLogin} className="space-y-3">
+
+           {/* 에러 메시지 */}
+           {error && (
+             <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl">
+               {error}
+             </div>
+           )}
+
+           {/* 이메일/비밀번호 입력 폼 */}
+           <form onSubmit={handleEmailLogin} className="space-y-3">
                <div>
-                   <input 
-                     type="text" 
-                     name="id"
-                     placeholder="아이디" 
-                     value={formData.id}
+                   <input
+                     type="text"
+                     name="email"
+                     placeholder="이메일"
+                     value={formData.email}
                      onChange={handleChange}
                      className="w-full bg-white border border-gray-200 rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all text-sm shadow-sm"
                    />
                </div>
                <div>
-                   <input 
-                     type="password" 
+                   <input
+                     type="password"
                      name="password"
-                     placeholder="비밀번호" 
+                     placeholder="비밀번호"
                      value={formData.password}
                      onChange={handleChange}
                      className="w-full bg-white border border-gray-200 rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all text-sm shadow-sm"
@@ -139,7 +150,7 @@ const LoginPage = () => {
                </div>
 
                {/* 로그인 버튼 */}
-               <button 
+               <button
                   type="submit"
                   disabled={isLoading}
                   className="w-full bg-amber-400 text-white py-4 rounded-2xl font-bold shadow-lg shadow-amber-200 hover:bg-amber-500 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
@@ -156,11 +167,11 @@ const LoginPage = () => {
 
            {/* 소셜 로그인 */}
            <div className="space-y-2">
-               {/* 카카오 (데모 활성화!) */}
-               <button 
+               {/* 카카오 */}
+               <button
                    type="button"
-                   onClick={handleKakaoDemoLogin} 
-                   disabled={isLoading} 
+                   onClick={handleKakaoLogin}
+                   disabled={isLoading}
                    className="w-full bg-[#FEE500] text-[#3B1E1E] py-3.5 rounded-2xl font-bold text-sm shadow-sm hover:bg-[#FDD835] active:scale-95 transition-all flex items-center justify-center gap-2"
                >
                    {isLoading ? (
@@ -173,10 +184,10 @@ const LoginPage = () => {
                    )}
                </button>
 
-               {/* 구글 (데모 활성화!) */}
-               <button 
+               {/* 구글 */}
+               <button
                    type="button"
-                   onClick={handleGoogleDemoLogin} 
+                   onClick={handleGoogleLogin}
                    disabled={isLoading}
                    className="w-full bg-white text-gray-700 border border-gray-100 py-3.5 rounded-2xl font-bold text-sm shadow-sm hover:bg-gray-50 active:scale-95 transition-all flex items-center justify-center gap-2"
                >
@@ -192,7 +203,7 @@ const LoginPage = () => {
            </div>
 
        </div>
-       
+
        <div className="mt-8 text-center">
            <p className="text-[10px] text-gray-400">
                아직 계정이 없으신가요? <span className="underline decoration-gray-300 cursor-pointer hover:text-amber-500 font-bold" onClick={() => navigate('/signup')}>회원가입</span>
