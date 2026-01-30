@@ -20,8 +20,9 @@ const useStore = create(
       // ==========================================
       isChatOpen: false,       
       chatQuery: '',           
-      isAiThinking: false,     
-
+      isAiThinking: false,
+      aiSessionId: null,
+      
       // ==========================================
       // 3. 자녀 데이터 (API 연동을 위해 초기값 비워둠)
       // ==========================================
@@ -322,27 +323,39 @@ const useStore = create(
       
       generateAiResponse: async () => { 
           set({ isAiThinking: true });
-          await new Promise(r => setTimeout(r, 1500));
-          
-          const messages = get().messages;
-          const lastUserMsg = messages[messages.length - 1]?.text || "";
-          
-          let aiText = "제가 답변드릴 수 있는 육아 정보가 아직 부족해요. 더 열심히 공부할게요! 📚";
 
-          if (lastUserMsg.includes('예방접종')) {
-              aiText = "다음 예방접종은 'B형 간염 3차'와 'DTaP 3차'입니다. 6개월 검진과 함께 소아과 예약을 추천드려요!";
-          } else if (lastUserMsg.includes('이유식')) {
-              aiText = "지금 시기(185일)에는 소고기 미음을 시작하는 게 좋습니다. 철분 보충을 위해 매일 소고기 10g을 섭취하도록 해주세요.";
-          } else if (lastUserMsg.includes('발달')) {
-              aiText = "이 시기 아이들은 뒤집기를 능숙하게 하고, 배밀이를 시도할 수 있어요. 낯가림이 시작될 수도 있답니다.";
-          } else if (lastUserMsg.includes('수면')) {
-              aiText = "수면 교육은 '퍼버법'이나 '안눕법'을 시도해 볼 수 있습니다. 일관된 수면 의식을 만들어주는 게 가장 중요해요!";
+          const messages = get().messages;
+          const lastUserMsg = messages[messages.length - 1]?.text?.trim();
+
+          if (!lastUserMsg) {
+            set({ isAiThinking: false });
+            return;
           }
 
-          set((state) => ({
-            isAiThinking: false,
-            messages: [...state.messages, { id: Date.now() + 1, role: 'ai', text: aiText }]
-          }));
+          try {
+            const { aiSessionId } = get();
+            const response = await http.post('/ai/chat', {
+              message: lastUserMsg,
+              session_id: aiSessionId || undefined,
+            });
+
+            const { status, data, message } = response.data;
+            const replyText = status === 'success' && data?.reply
+              ? data.reply
+              : message || 'AI 응답을 가져오지 못했어요. 잠시 후 다시 시도해주세요.';
+
+            set((state) => ({
+              isAiThinking: false,
+              aiSessionId: data?.session_id ?? state.aiSessionId,
+              messages: [...state.messages, { id: Date.now() + 1, role: 'ai', text: replyText }]
+            }));
+          } catch (error) {
+            const errorMessage = error.response?.data?.message || 'AI 서버와 통신 중 오류가 발생했습니다.';
+            set((state) => ({
+              isAiThinking: false,
+              messages: [...state.messages, { id: Date.now() + 1, role: 'ai', text: errorMessage }]
+            }));
+          }
       },
       
       updateTrackerData: (key, value) => set((state) => ({
