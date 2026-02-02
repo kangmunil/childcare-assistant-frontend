@@ -2,31 +2,28 @@ import React, { useState } from 'react';
 import { X, Check, Baby } from 'lucide-react';
 
 const GrowthInputModal = ({ isOpen, onClose, onSave }) => {
+  const [height, setHeight] = useState('');
+  const [weight, setWeight] = useState('');
+  const [saving, setSaving] = useState(false);
+
   // 모달이 닫혀있으면 아무것도 렌더링하지 않음
   if (!isOpen) return null;
 
-  const [height, setHeight] = useState('');
-  const [weight, setWeight] = useState('');
-
-  const handleSubmit = () => {
-    // 1. 입력값 검증
+  const handleSubmit = async () => {
     if (!height || !weight) {
       alert('키와 몸무게를 모두 입력해주세요!');
       return;
     }
+    if (saving) return;
+    setSaving(true);
 
-    // 2. 데이터 전송 (로그 출력)
-    console.log("✅ [모달] 저장 버튼 클릭됨!");
-    console.log("📤 [모달] 보내는 데이터:", { height, weight });
-
-    // 부모(RecordPage)에게 데이터 전달
-    onSave({ 
-      height: parseFloat(height), 
+    await onSave({
+      height: parseFloat(height),
       weight: parseFloat(weight),
-      date: new Date().toISOString() 
+      date: new Date().toISOString()
     });
 
-    // 3. 초기화 및 닫기
+    setSaving(false);
     setHeight('');
     setWeight('');
     onClose();
@@ -87,12 +84,13 @@ const GrowthInputModal = ({ isOpen, onClose, onSave }) => {
         </div>
 
         {/* 버튼 */}
-        <button 
+        <button
           onClick={handleSubmit}
-          className="w-full mt-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-2"
+          disabled={saving}
+          className="w-full mt-8 py-4 bg-indigo-600 disabled:bg-gray-300 text-white rounded-2xl font-bold text-lg shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-2"
         >
           <Check className="w-5 h-5" />
-          기록 저장하기
+          {saving ? '저장 중...' : '기록 저장하기'}
         </button>
       </div>
     </div>

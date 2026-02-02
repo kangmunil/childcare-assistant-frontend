@@ -27,14 +27,17 @@ const useStore = create(
       // 3. 자녀 데이터 (API 연동을 위해 초기값 비워둠)
       // ==========================================
       children: [], // 초기값 빈 배열
+      childrenLoaded: false, // 자녀 목록 API 호출 완료 여부
       activeChildId: null,
 
-      trackerData: {
-        feeding: '850', 
-        pumping: '120', 
-        sleep: '12',    
-        diaper: '6'     
-      },
+      // 동적 일지 항목
+      diaryItems: [],
+      diaryItemsLoaded: false,
+      summaryValues: {},
+      checklistUnchecked: [],
+      checklistChecked: [],
+      checklistLoaded: false,
+
       currentStatus: 'play',
       
       setCurrentStatus: (status) => set({ currentStatus: status }),
@@ -57,18 +60,10 @@ const useStore = create(
       // ==========================================
       // 4~7. 데이터 영역 (UI 표시용 더미 데이터)
       // ==========================================
-      growthRecords: [
-        { month: 0, height: 50, weight: 3.2 },
-        { month: 1, height: 54, weight: 4.5 },
-        { month: 2, height: 58, weight: 5.8 },
-        { month: 3, height: 61, weight: 6.7 },
-      ],
+      growthRecords: [],
+      growthRecordsLoaded: false,
 
-      events: [
-        { id: 1, date: '2025-12-03', title: 'B형 간염 2차 접종', type: 'hospital', time: '14:00', location: '서울 소아과', description: '' },
-        { id: 2, date: '2025-12-03', title: '이유식 재료 사기', type: 'todo', time: '16:00', location: '마트', description: '' },
-        { id: 3, date: '2025-12-25', title: '크리스마스 파티', type: 'event', time: '18:00', location: '집', description: '' },
-      ],
+      events: [],
 
       notifications: [
         { id: 1, type: 'schedule', message: '오늘 오후 2시 B형 간염 접종이 있어요 💉', time: '방금 전', isRead: false },
@@ -143,6 +138,183 @@ const useStore = create(
       },
 
       // ==========================================
+      // [3-1] 대시보드 데이터 API 연동
+      // ==========================================
+
+      // 일지 항목 마스터 조회
+      fetchDiaryItems: async (childBirthDay) => {
+        try {
+          // 자녀 나이로 division 결정 (12개월 미만: newborn, 이상: infant)
+          const birth = new Date(childBirthDay);
+          const now = new Date();
+          const monthsDiff = (now.getFullYear() - birth.getFullYear()) * 12 + (now.getMonth() - birth.getMonth());
+          const division = monthsDiff < 12 ? 'newborn' : 'infant';
+
+          const response = await http.get('/diary-items', {
+            params: { division },
+          });
+          const { status, data, message } = response.data;
+
+          if (status === 'success') {
+            set({ diaryItems: data || [], diaryItemsLoaded: true });
+            return { success: true };
+          } else {
+            console.error('일지 항목 조회 실패:', message);
+            set({ diaryItemsLoaded: true });
+            return { success: false };
+          }
+        } catch (error) {
+          console.error('일지 항목 조회 실패:', error);
+          set({ diaryItemsLoaded: true });
+          return { success: false };
+        }
+      },
+
+      // 일지 요약 조회
+      fetchSummary: async (childId, date) => {
+        try {
+          const response = await http.get(`/children/${childId}/diaries/summary`, {
+            params: { date },
+          });
+          const { status, data, message } = response.data;
+
+          if (status === 'success') {
+            const items = data?.items || [];
+            const newValues = {};
+            items.forEach((item) => {
+              newValues[item.itemId] = {
+                totalAmount: item.totalAmount ?? 0,
+                count: item.count ?? 0,
+              };
+            });
+            set({ summaryValues: newValues });
+            return { success: true };
+          } else {
+            alert(message || '알 수 없는 오류가 발생했습니다.');
+            return { success: false };
+          }
+        } catch (error) {
+          const msg = error.response?.data?.message || error.message || '알 수 없는 오류가 발생했습니다.';
+          console.error('일지 요약 조회 실패:', msg);
+          alert(msg);
+          return { success: false };
+        }
+      },
+
+      // 캘린더 일정 단건 조회 (GET /api/children/{childId}/calendars/{calendarId})
+      fetchCalendar: async (childId, calendarId) => {
+        try {
+          const response = await http.get(`/children/${childId}/calendars/${calendarId}`);
+          const { status, data } = response.data;
+          if (status === 'success' && data) {
+            return {
+              success: true,
+              data: {
+                id: data.id,
+                date: data.caDate,
+                time: data.caTime || '00:00',
+                title: data.title || '',
+                type: data.div || 'todo',
+                location: data.place || '',
+                address1: data.placeAddress1 || '',
+                address2: data.placeAddress2 || '',
+                postcode: data.placePostcode || '',
+                description: data.memo || '',
+              },
+            };
+          }
+          return { success: false };
+        } catch (error) {
+          console.error('일정 단건 조회 실패:', error);
+          return { success: false };
+        }
+      },
+
+      // 캘린더 일정 조회 (GET /api/children/{childId}/calendars)
+      fetchCalendarEvents: async (childId, params = {}) => {
+        try {
+          const response = await http.get(`/children/${childId}/calendars`, { params });
+          const { status, data, message } = response.data;
+
+          if (status === 'success') {
+            const mapped = (data || []).map((item) => ({
+              id: item.id,
+              date: item.caDate,
+              time: item.caTime || '00:00',
+              title: item.title || '',
+              type: item.div || 'todo',
+              location: item.place || '',
+              description: item.memo || '',
+            }));
+            set({ events: mapped });
+            return { success: true };
+          } else {
+            alert(message || '알 수 없는 오류가 발생했습니다.');
+            return { success: false };
+          }
+        } catch (error) {
+          const msg = error.response?.data?.message || error.message || '알 수 없는 오류가 발생했습니다.';
+          console.error('캘린더 조회 실패:', msg);
+          alert(msg);
+          return { success: false };
+        }
+      },
+
+      // 일지 목록 조회 (GET /api/children/{childId}/diaries?date=YYYY-MM-DD)
+      fetchDiaryLogs: async (childId, date) => {
+        try {
+          const response = await http.get(`/children/${childId}/diaries`, {
+            params: { date },
+          });
+          const { status, data } = response.data;
+          if (status === 'success') {
+            return data || [];
+          }
+          return [];
+        } catch (error) {
+          console.error('일지 목록 조회 실패:', error);
+          return [];
+        }
+      },
+
+      // 일지 기록 저장 (POST /api/children/{childId}/diaries)
+      createDiary: async (childId, logs, itemId) => {
+        try {
+          if (!itemId) {
+            alert('항목 정보를 찾을 수 없습니다. 페이지를 새로고침 해주세요.');
+            return { success: false };
+          }
+
+          for (const log of logs) {
+            const payload = {
+              itemId,
+              diDate: log.diDate,
+              diTime: log.diTime,
+              amount: String(log.amount),
+            };
+            const response = await http.post(`/children/${childId}/diaries`, payload);
+            const { status, message } = response.data;
+            if (status !== 'success') {
+              alert(message || '알 수 없는 오류가 발생했습니다.');
+              return { success: false };
+            }
+          }
+
+          // 저장 완료 후 요약 데이터 갱신
+          const today = new Date();
+          const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+          await get().fetchSummary(childId, dateStr);
+
+          return { success: true };
+        } catch (error) {
+          const msg = error.response?.data?.message || error.message || '알 수 없는 오류가 발생했습니다.';
+          console.error('일지 저장 실패:', msg);
+          alert(msg);
+          return { success: false };
+        }
+      },
+
+      // ==========================================
       // [4] 자녀 관리 API 연동 (명세서 반영)
       // ==========================================
 
@@ -155,15 +327,17 @@ const useStore = create(
           if (status === 'success') {
             // 데이터가 배열인지 확인 (방어 코드)
             const childList = Array.isArray(data) ? data : (data ? [data] : []);
-            
-            set({ 
+
+            set({
               children: childList,
+              childrenLoaded: true,
               // 활성화된 자녀가 없거나 삭제된 경우 첫 번째 자녀 선택
               activeChildId: childList.length > 0 ? childList[0].id : null
             });
             console.log("✅ 자녀 목록 갱신:", childList.length, "명");
           }
         } catch (error) {
+          set({ childrenLoaded: true });
           console.error("❌ 자녀 목록 조회 실패:", error);
         }
       },
@@ -302,13 +476,78 @@ const useStore = create(
       
       // (기존 dummy addChild 제거됨 -> API addChild 사용)
 
+      // addGrowthRecord 제거됨 -> API createGrowthHistory 사용
+/*
       addGrowthRecord: (newRecord) => set((state) => ({
         growthRecords: [...state.growthRecords, newRecord].sort((a, b) => a.month - b.month)
       })),
+*/
+      // 캘린더 일정 생성
+      createCalendar: async (childId, data) => {
+        try {
+          const payload = {
+            div: data.type || 'todo',
+            title: data.title,
+            caDate: data.date,
+            caTime: data.time || '00:00',
+            place: data.location || '',
+            memo: data.description || '',
+          };
+          const response = await http.post(`/children/${childId}/calendars`, payload);
+          const { status, message } = response.data;
+          if (status === 'success') {
+            return { success: true };
+          }
+          alert(message || '일정 저장에 실패했습니다.');
+          return { success: false };
+        } catch (error) {
+          const msg = error.response?.data?.message || error.message || '알 수 없는 오류가 발생했습니다.';
+          alert(msg);
+          return { success: false };
+        }
+      },
 
-      addEvent: (newEvent) => set((state) => ({
-        events: [...state.events, newEvent]
-      })),
+      // 캘린더 일정 수정
+      updateCalendar: async (childId, calendarId, data) => {
+        try {
+          const payload = {
+            div: data.type,
+            title: data.title,
+            caDate: data.date,
+            caTime: data.time,
+            place: data.location,
+            memo: data.description,
+          };
+          const response = await http.put(`/children/${childId}/calendars/${calendarId}`, payload);
+          const { status, message } = response.data;
+          if (status === 'success') {
+            return { success: true };
+          }
+          alert(message || '일정 수정에 실패했습니다.');
+          return { success: false };
+        } catch (error) {
+          const msg = error.response?.data?.message || error.message || '알 수 없는 오류가 발생했습니다.';
+          alert(msg);
+          return { success: false };
+        }
+      },
+
+      // 캘린더 일정 삭제
+      deleteCalendar: async (childId, calendarId) => {
+        try {
+          const response = await http.delete(`/children/${childId}/calendars/${calendarId}`);
+          const { status, message } = response.data;
+          if (status === 'success') {
+            return { success: true };
+          }
+          alert(message || '일정 삭제에 실패했습니다.');
+          return { success: false };
+        } catch (error) {
+          const msg = error.response?.data?.message || error.message || '알 수 없는 오류가 발생했습니다.';
+          alert(msg);
+          return { success: false };
+        }
+      },
       
       markAsRead: (id) => set((state) => ({
         notifications: state.notifications.map(n => 
@@ -358,12 +597,167 @@ const useStore = create(
           }
       },
       
-      updateTrackerData: (key, value) => set((state) => ({
-        trackerData: {
-          ...state.trackerData,
-          [key]: value
+      // ==========================================
+      // [5] 성장 체크리스트 API 연동
+      // ==========================================
+
+      // 미체크 항목 조회
+      fetchUncheckedChecklists: async (childId, div) => {
+        try {
+          const response = await http.get(`/children/${childId}/checklists/unchecked/${div}`);
+          const { status, data } = response.data;
+          if (status === 'success') {
+            return { success: true, data: data || [] };
+          }
+          return { success: false, data: [] };
+        } catch (error) {
+          console.error('미체크 체크리스트 조회 실패:', error);
+          return { success: false, data: [] };
         }
-      })),
+      },
+
+      // 체크된 항목 조회
+      fetchCheckedChecklists: async (childId, div) => {
+        try {
+          const response = await http.get(`/children/${childId}/checklists/checked/${div}`);
+          const { status, data } = response.data;
+          if (status === 'success') {
+            return { success: true, data: data || [] };
+          }
+          return { success: false, data: [] };
+        } catch (error) {
+          console.error('체크 체크리스트 조회 실패:', error);
+          return { success: false, data: [] };
+        }
+      },
+
+      // 모든 division의 체크리스트 한번에 조회
+      fetchAllChecklists: async (childId, divisions) => {
+        try {
+          const fetchChecked = get().fetchCheckedChecklists;
+          const fetchUnchecked = get().fetchUncheckedChecklists;
+
+          const results = await Promise.all(
+            divisions.flatMap(div => [
+              fetchUnchecked(childId, div).then(r => ({ type: 'unchecked', div, ...r })),
+              fetchChecked(childId, div).then(r => ({ type: 'checked', div, ...r })),
+            ])
+          );
+
+          const unchecked = [];
+          const checked = [];
+          for (const r of results) {
+            if (r.success) {
+              if (r.type === 'unchecked') unchecked.push(...r.data);
+              else checked.push(...r.data);
+            }
+          }
+
+          set({ checklistUnchecked: unchecked, checklistChecked: checked, checklistLoaded: true });
+          return { success: true };
+        } catch (error) {
+          console.error('체크리스트 전체 조회 실패:', error);
+          set({ checklistLoaded: true });
+          return { success: false };
+        }
+      },
+
+      // 체크 추가
+      addCheck: async (childId, itemId) => {
+        try {
+          const response = await http.post(`/children/${childId}/checklists/${itemId}`);
+          const { status, message } = response.data;
+          if (status === 'success') {
+            return { success: true };
+          }
+          alert(message || '체크 추가에 실패했습니다.');
+          return { success: false };
+        } catch (error) {
+          const msg = error.response?.data?.message || '체크 추가 중 오류가 발생했습니다.';
+          alert(msg);
+          return { success: false };
+        }
+      },
+
+      // 체크 삭제
+      removeCheck: async (childId, itemId) => {
+        try {
+          const response = await http.delete(`/children/${childId}/checklists/${itemId}`);
+          const { status, message } = response.data;
+          if (status === 'success') {
+            return { success: true };
+          }
+          alert(message || '체크 해제에 실패했습니다.');
+          return { success: false };
+        } catch (error) {
+          const msg = error.response?.data?.message || '체크 해제 중 오류가 발생했습니다.';
+          alert(msg);
+          return { success: false };
+        }
+      },
+
+      // ==========================================
+      // [6] 성장 이력 API 연동
+      // ==========================================
+
+      // 성장 이력 목록 조회
+      fetchGrowthHistory: async (childId) => {
+        try {
+          const response = await http.get(`/children/${childId}/history`);
+          const { status, data } = response.data;
+          if (status === 'success') {
+            const records = (data || []).map(item => ({
+              month: item.month || '',
+              height: parseFloat(item.height) || 0,
+              weight: parseFloat(item.weight) || 0,
+            }));
+            set({ growthRecords: records, growthRecordsLoaded: true });
+            return { success: true };
+          }
+          set({ growthRecordsLoaded: true });
+          return { success: false };
+        } catch (error) {
+          console.error('성장 이력 조회 실패:', error);
+          set({ growthRecordsLoaded: true });
+          return { success: false };
+        }
+      },
+
+      // 성장 이력 등록
+      createGrowthHistory: async (childId, data) => {
+        try {
+          const payload = {
+            height: String(data.height),
+            weight: String(data.weight),
+          };
+          const response = await http.post(`/children/${childId}/history`, payload);
+          const { status, data: resData, message } = response.data;
+          if (status === 'success') {
+            await get().fetchGrowthHistory(childId);
+            const child = get().children.find(c => c.id === childId);
+            if (child) {
+              await get().updateChild(childId, {
+                name: child.name,
+                birthDay: child.birthDate || child.birthDay,
+                birthTime: child.birthTime || '00:00:00',
+                gender: child.gender,
+                height: String(data.height),
+                weight: String(data.weight),
+                memo: child.memo || '',
+              });
+            }
+            return { success: true, data: resData };
+          }
+          alert(message || '성장 기록 저장에 실패했습니다.');
+          return { success: false };
+        } catch (error) {
+          const msg = error.response?.data?.message || '성장 기록 저장 중 오류가 발생했습니다.';
+          alert(msg);
+          return { success: false };
+        }
+      },
+
+      resetDiaryItems: () => set({ diaryItems: [], diaryItemsLoaded: false, summaryValues: {} }),
     }),
     {
       name: 'bebehelper-storage',
@@ -375,7 +769,6 @@ const useStore = create(
         isDarkMode: state.isDarkMode,
         children: state.children,
         activeChildId: state.activeChildId,
-        growthRecords: state.growthRecords,
         events: state.events,
       }),
     }
