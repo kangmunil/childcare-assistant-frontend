@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Milk, Moon, Activity, Plus, ChevronRight, Droplet, MessageCircle, ExternalLink, Sparkles } from 'lucide-react';
+import { Milk, Moon, Activity, Plus, ChevronRight, Droplet, MessageCircle, ExternalLink, Sparkles, Baby, Utensils, Thermometer, Stethoscope, Heart } from 'lucide-react';
 
-import TrackerCard from '../components/TrackerCard'; 
+import TrackerCard from '../components/TrackerCard';
 import TrackerInputModal from '../components/TrackerInputModal';
-import FeedingModal from '../components/FeedingModal'; 
+import CalendarDetailModal from '../components/CalendarDetailModal';
 import useStore from '../store/useStore'; 
 
 const statusConfig = {
@@ -15,30 +15,93 @@ const statusConfig = {
   sick:  { text: '아파요', color: 'bg-rose-500',    ring: 'ring-rose-300' },
 };
 
+// 아이템 코드(cc_di_code) → 아이콘/색상 매핑
+const codeStyleMap = {
+  // newborn
+  BREAST:     { icon: Milk,        themeColor: 'amber' },
+  FORMULA:    { icon: Milk,        themeColor: 'amber' },
+  PUMPING:    { icon: Droplet,     themeColor: 'emerald' },
+  SLEEP:      { icon: Moon,        themeColor: 'indigo' },
+  DIAPER:     { icon: Activity,    themeColor: 'sky' },
+  // infant
+  BABY_FOOD:  { icon: Utensils,    themeColor: 'amber' },
+  PLAY:       { icon: Baby,        themeColor: 'emerald' },
+  POTTY:      { icon: Activity,    themeColor: 'sky' },
+  NAP:        { icon: Moon,        themeColor: 'indigo' },
+};
+const defaultStyle = { icon: Heart, themeColor: 'amber' };
+const themeColors = ['amber', 'emerald', 'indigo', 'sky'];
+
 const DashboardPage = () => {
-  const { 
-      children, 
-      activeChildId, 
-      events, 
-      trackerData, 
-      updateTrackerData, 
-      currentStatus, 
-      openChatWithQuery 
+  const {
+      children,
+      childrenLoaded,
+      activeChildId,
+      events,
+      diaryItems,
+      diaryItemsLoaded,
+      summaryValues,
+      currentStatus,
+      openChatWithQuery,
+      fetchDiaryItems,
+      fetchSummary,
+      fetchCalendarEvents,
+      fetchDiaryLogs,
+      createDiary,
+      fetchCalendar,
+      updateCalendar,
+      deleteCalendar
   } = useStore();
   
   const navigate = useNavigate(); 
   
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isFeedingModalOpen, setIsFeedingModalOpen] = useState(false); 
   const [selectedTracker, setSelectedTracker] = useState(null);
+  const [initialLogs, setInitialLogs] = useState([]);
+  const [selectedEvent, setSelectedEvent] = useState(null);
 
   const [selectedDate, setSelectedDate] = useState(new Date());
 
   const currentChild = children.find(c => c.id === activeChildId) || children[0];
 
+  // 자녀 목록 로딩 완료 후 자녀가 없으면 자녀 등록 페이지로 이동
+  useEffect(() => {
+    if (childrenLoaded && children.length === 0) {
+      navigate('/child-setup', { replace: true });
+    }
+  }, [childrenLoaded, children.length]);
+
   const formatDate = (date) => {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   };
+
+  // 자녀 로딩 완료 + 자녀 변경 시 일지 항목/요약/캘린더 데이터 조회
+  useEffect(() => {
+    if (childrenLoaded && currentChild?.id) {
+      // 자녀 생년월일로 division 결정하여 일지 항목 마스터 조회
+      const birthDay = currentChild.birthDay || currentChild.birthDate;
+      if (birthDay) {
+        fetchDiaryItems(birthDay);
+      }
+
+      const today = formatDate(new Date());
+      fetchSummary(currentChild.id, today);
+
+      const year = selectedDate.getFullYear();
+      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+      fetchCalendarEvents(currentChild.id, { month: `${year}-${month}` });
+    }
+  }, [childrenLoaded, currentChild?.id]);
+
+  // 캘린더 월 변경 시 일정만 재조회
+  useEffect(() => {
+    if (childrenLoaded && currentChild?.id) {
+      const year = selectedDate.getFullYear();
+      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+      fetchCalendarEvents(currentChild.id, { month: `${year}-${month}` });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate.getFullYear(), selectedDate.getMonth()]);
 
   const selectedDateStr = formatDate(selectedDate);
   const todayStr = formatDate(new Date());
@@ -53,21 +116,22 @@ const DashboardPage = () => {
       return events.some(e => e.date === checkDateStr);
   };
 
-  const summaryData = [
-    { 
-      id: 1, 
-      key: 'feeding', 
-      title: 'Feeding', 
-      subtitle: '모유/분유',       
-      value: trackerData.feedingLogs?.reduce((acc, cur) => acc + cur.amount, 0) || 0,
-      unit: 'ml', 
-      themeColor: 'amber', 
-      icon: Milk 
-    },
-    { id: 2, key: 'pumping', title: 'Pumping', subtitle: '유축량', value: trackerData.pumping, unit: 'ml', themeColor: 'emerald', icon: Droplet },
-    { id: 3, key: 'sleep', title: 'Sleep', subtitle: '총 수면', value: trackerData.sleep, unit: 'hr', themeColor: 'indigo', icon: Moon },
-    { id: 4, key: 'diaper', title: 'Diaper', subtitle: '기저귀', value: trackerData.diaper, unit: '회', themeColor: 'sky', icon: Activity },
-  ];
+  //ITEM 목록도 DB에서 조회
+  const summaryData = diaryItems.map((item, idx) => {
+    const code = (item.code || '').toUpperCase();
+    const style = codeStyleMap[code] || defaultStyle;
+    const sv = summaryValues[item.id];
+    return {
+      id: item.id,
+      itemId: item.id,
+      title: item.code || item.name,
+      subtitle: item.name,
+      value: String(sv?.totalAmount ?? 0),
+      unit: item.unit || '',
+      themeColor: style.themeColor || themeColors[idx % themeColors.length],
+      icon: style.icon,
+    };
+  });
 
   const quickActions = [
     { label: "예방접종 확인", icon: "💉", query: `${currentChild.name}의 다음 예방접종 시기 언제야?` },
@@ -84,24 +148,82 @@ const DashboardPage = () => {
       return days > 0 ? days : 1;
   };
 
-  const handleCardClick = (item) => {
+  const handleCardClick = async (item) => {
     setSelectedTracker(item);
-    if (item.key === 'feeding') {
-        setIsFeedingModalOpen(true);
+
+    // 오늘 해당 항목의 기존 일지를 조회
+    if (currentChild?.id && item.itemId) {
+      const today = formatDate(new Date());
+      const allLogs = await fetchDiaryLogs(currentChild.id, today);
+      const filtered = allLogs
+        .filter((log) => log.itemId === item.itemId)
+        .map((log) => ({
+          id: log.id,
+          time: log.diTime || '00:00',
+          amount: Number(log.amount) || 0,
+        }))
+        .sort((a, b) => a.time.localeCompare(b.time));
+      setInitialLogs(filtered);
     } else {
-        setIsModalOpen(true);
+      setInitialLogs([]);
+    }
+
+    setIsModalOpen(true);
+  };
+
+  const handleAddLog = async (log) => {
+    if (!selectedTracker || !currentChild?.id) return false;
+
+    const today = new Date();
+    const diDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    const result = await createDiary(
+      currentChild.id,
+      [{ diDate, diTime: log.time, amount: log.amount }],
+      selectedTracker.itemId
+    );
+    return result.success;
+  };
+
+  const handleScheduleClick = async (item) => {
+    if (!currentChild?.id) return;
+    const result = await fetchCalendar(currentChild.id, item.id);
+    if (result.success) {
+      setSelectedEvent(result.data);
+    } else {
+      setSelectedEvent(item);
     }
   };
 
-  const handleSaveData = (id, newValue) => {
-    const item = summaryData.find(d => d.id === id);
-    if (item) {
-        updateTrackerData(item.key, newValue);
+  const handleScheduleUpdate = async (calendarId, formData) => {
+    if (!currentChild?.id) return { success: false };
+    const result = await updateCalendar(currentChild.id, calendarId, {
+      title: formData.title,
+      time: formData.time,
+      type: formData.type,
+      date: formData.date,
+      location: formData.location,
+      description: formData.description,
+    });
+    if (result.success) {
+      const refreshed = await fetchCalendar(currentChild.id, calendarId);
+      if (refreshed.success) setSelectedEvent(refreshed.data);
+      const year = selectedDate.getFullYear();
+      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+      fetchCalendarEvents(currentChild.id, { month: `${year}-${month}` });
     }
+    return result;
   };
 
-  const handleSaveFeeding = ({ total }) => {
-    updateTrackerData('feeding', total);
+  const handleScheduleDelete = async (calendarId) => {
+    if (!currentChild?.id) return;
+    const result = await deleteCalendar(currentChild.id, calendarId);
+    if (result.success) {
+      setSelectedEvent(null);
+      const year = selectedDate.getFullYear();
+      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+      fetchCalendarEvents(currentChild.id, { month: `${year}-${month}` });
+    }
   };
 
   const currentStatusInfo = statusConfig[currentStatus] || statusConfig.play;
@@ -109,18 +231,20 @@ const DashboardPage = () => {
   return (
     <div className="pb-24 md:pb-0 h-full flex flex-col relative overflow-hidden">
 
-      <TrackerInputModal 
+      <TrackerInputModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         data={selectedTracker}
-        onSave={handleSaveData}
+        initialLogs={initialLogs}
+        onAddLog={handleAddLog}
       />
 
-      <FeedingModal 
-        isOpen={isFeedingModalOpen}
-        onClose={() => setIsFeedingModalOpen(false)}
-        initialData={selectedTracker}
-        onSave={handleSaveFeeding}
+      <CalendarDetailModal
+        isOpen={!!selectedEvent}
+        onClose={() => setSelectedEvent(null)}
+        event={selectedEvent}
+        onDelete={handleScheduleDelete}
+        onUpdate={handleScheduleUpdate}
       />
 
       {/* 1. [수정됨] 상단 슬림 배너 (높이 축소 및 레이아웃 정리) */}
@@ -200,11 +324,11 @@ const DashboardPage = () => {
             {/* 트래커 카드 4개 */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 shrink-0">
                 {summaryData.map((item) => {
-                    const { key, ...cardProps } = item; 
+                    const { itemId, ...cardProps } = item;
                     return (
-                        <div 
-                            key={item.id} 
-                            onClick={() => handleCardClick(item)} 
+                        <div
+                            key={item.id}
+                            onClick={() => handleCardClick(item)}
                             className="cursor-pointer transition-transform hover:scale-105 active:scale-95"
                         >
                             <TrackerCard {...cardProps} />
@@ -229,29 +353,39 @@ const DashboardPage = () => {
                 <div className="bg-white rounded-[2rem] p-5 shadow-sm border border-gray-100 flex-1 overflow-y-auto custom-scrollbar min-h-[200px]">
                     <div className="space-y-3">
                         {selectedDaySchedules.length > 0 ? (
-                            selectedDaySchedules.map((item, index) => (
-                                <div 
-                                    key={index} 
-                                    onClick={() => navigate('/calendar')}
-                                    className="flex items-center p-2.5 rounded-2xl hover:bg-amber-50/50 transition-colors group cursor-pointer border border-transparent hover:border-amber-100"
-                                >
-                                    <div className="w-12 h-12 bg-gray-50 rounded-xl flex flex-col items-center justify-center text-gray-500 font-bold border border-gray-100 group-hover:bg-white group-hover:shadow-sm transition-all">
-                                        <span className="text-[10px] text-gray-400 font-medium">
-                                            {parseInt(item.time.split(':')[0]) >= 12 ? 'PM' : 'AM'}
-                                        </span>
-                                        <span className="text-base leading-none">{item.time.split(':')[0]}</span>
+                            <>
+                                {selectedDaySchedules.slice(0, 3).map((item, index) => (
+                                    <div
+                                        key={index}
+                                        onClick={() => handleScheduleClick(item)}
+                                        className="flex items-center p-2.5 rounded-2xl hover:bg-amber-50/50 transition-colors group cursor-pointer border border-transparent hover:border-amber-100"
+                                    >
+                                        <div className="w-12 h-12 bg-gray-50 rounded-xl flex flex-col items-center justify-center text-gray-500 font-bold border border-gray-100 group-hover:bg-white group-hover:shadow-sm transition-all">
+                                            <span className="text-[10px] text-gray-400 font-medium">
+                                                {parseInt(item.time.split(':')[0]) >= 12 ? 'PM' : 'AM'}
+                                            </span>
+                                            <span className="text-base leading-none">{item.time.split(':')[0]}</span>
+                                        </div>
+                                        <div className="ml-4 flex-1">
+                                            <p className="text-sm font-bold text-gray-800">{item.title}</p>
+                                            <p className="text-xs text-gray-400 font-medium mt-0.5">
+                                                {item.location} • {item.type === 'hospital' ? '병원' : item.type === 'event' ? '행사' : '할일'}
+                                            </p>
+                                        </div>
+                                        <button className="w-8 h-8 rounded-full border border-gray-100 flex items-center justify-center text-gray-400 hover:bg-amber-500 hover:text-white hover:border-amber-500 transition-all">
+                                            <ChevronRight className="w-4 h-4" />
+                                        </button>
                                     </div>
-                                    <div className="ml-4 flex-1">
-                                        <p className="text-sm font-bold text-gray-800">{item.title}</p>
-                                        <p className="text-xs text-gray-400 font-medium mt-0.5">
-                                            {item.location} • {item.type === 'hospital' ? '병원' : item.type === 'event' ? '행사' : '할일'}
-                                        </p>
-                                    </div>
-                                    <button className="w-8 h-8 rounded-full border border-gray-100 flex items-center justify-center text-gray-400 hover:bg-amber-500 hover:text-white hover:border-amber-500 transition-all">
-                                        <ChevronRight className="w-4 h-4" />
+                                ))}
+                                {selectedDaySchedules.length > 3 && (
+                                    <button
+                                        onClick={() => navigate('/calendar')}
+                                        className="w-full py-2.5 text-xs font-bold text-amber-500 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition-colors"
+                                    >
+                                        +{selectedDaySchedules.length - 3}개 더보기
                                     </button>
-                                </div>
-                            ))
+                                )}
+                            </>
                         ) : (
                             <div className="p-8 text-center text-gray-400 flex flex-col items-center justify-center h-full">
                                 <p className="text-sm font-medium">

@@ -1,16 +1,22 @@
-import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, MapPin, Clock, Plus, Syringe, Cake, PartyPopper, ExternalLink } from 'lucide-react'; // ExternalLink 아이콘 추가
+import React, { useState, useEffect } from 'react';
+import { ChevronLeft, ChevronRight, MapPin, Clock, Plus, Syringe, Cake, PartyPopper, Trash2 } from 'lucide-react';
 import CalendarInputModal from '../components/CalendarInputModal';
-import DayDetailModal from '../components/DayDetailModal'; // ★ [New] 상세 모달 import
+import CalendarDetailModal from '../components/CalendarDetailModal';
 import useStore from '../store/useStore';
 
 const CalendarPage = () => {
-  const { events, addEvent } = useStore();
-  
+  const {
+    children, childrenLoaded, activeChildId, events,
+    fetchCalendarEvents, fetchCalendar, createCalendar, updateCalendar, deleteCalendar
+  } = useStore();
+
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isInputModalOpen, setIsInputModalOpen] = useState(false);
-  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false); // ★ 상세 모달 상태
+  //const [isDetailModalOpen, setIsDetailModalOpen] = useState(false); // ★ 상세 모달 상태
+  const [selectedEvent, setSelectedEvent] = useState(null);
+
+  const currentChild = children.find(c => c.id === activeChildId) || children[0];
 
   const formatDate = (date) => {
     if (!date) return '';
@@ -20,17 +26,78 @@ const CalendarPage = () => {
     return `${y}-${m}-${d}`;
   };
 
-  const handleSaveEvent = (newEventData) => {
+  // 월 변경 또는 자녀 변경 시 캘린더 데이터 조회
+  useEffect(() => {
+    if (childrenLoaded && currentChild?.id) {
+      const year = currentDate.getFullYear();
+      const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+      fetchCalendarEvents(currentChild.id, { month: `${year}-${month}` });
+    }
+  }, [childrenLoaded, currentChild?.id, currentDate.getFullYear(), currentDate.getMonth()]);
+
+  const reloadEvents = () => {
+    if (currentChild?.id) {
+      const year = currentDate.getFullYear();
+      const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+      fetchCalendarEvents(currentChild.id, { month: `${year}-${month}` });
+    }
+  };
+
+  const handleSaveEvent = async (newEventData) => {
+    if (!currentChild?.id) return;
     const formattedDate = formatDate(newEventData.date);
-    addEvent({
-        id: Date.now(),
-        date: formattedDate,
-        title: newEventData.title,
-        time: newEventData.time,
-        location: newEventData.location,
-        type: newEventData.type,
-        description: newEventData.description
+    const result = await createCalendar(currentChild.id, {
+      title: newEventData.title,
+      time: newEventData.time,
+      type: newEventData.type,
+      location: newEventData.location,
+      description: newEventData.description,
+      date: formattedDate,
     });
+    if (result.success) {
+      reloadEvents();
+    }
+  };
+
+  const handleDeleteEvent = async (eventId) => {
+    if (!currentChild?.id) return;
+    const result = await deleteCalendar(currentChild.id, eventId);
+    if (result.success) {
+      setSelectedEvent(null);
+      reloadEvents();
+    }
+  };
+
+  const handleUpdateEvent = async (calendarId, formData) => {
+    if (!currentChild?.id) return { success: false };
+    const result = await updateCalendar(currentChild.id, calendarId, {
+      title: formData.title,
+      time: formData.time,
+      type: formData.type,
+      date: formData.date,
+      location: formData.location,
+      description: formData.description,
+    });
+    if (result.success) {
+      // 수정된 데이터로 selectedEvent 갱신
+      const refreshed = await fetchCalendar(currentChild.id, calendarId);
+      if (refreshed.success) {
+        setSelectedEvent(refreshed.data);
+      }
+      reloadEvents();
+    }
+    return result;
+  };
+
+  const handleEventClick = async (event) => {
+    if (!currentChild?.id) return;
+    const result = await fetchCalendar(currentChild.id, event.id);
+    if (result.success) {
+      setSelectedEvent(result.data);
+    } else {
+      // API 실패 시 로컬 데이터로 표시
+      setSelectedEvent(event);
+    }
   };
 
   const year = currentDate.getFullYear();
@@ -66,11 +133,12 @@ const CalendarPage = () => {
       />
 
       {/* 2. ★ [New] 일정 상세 보기 모달 */}
-      <DayDetailModal 
-        isOpen={isDetailModalOpen}
-        onClose={() => setIsDetailModalOpen(false)}
-        date={selectedDate}
-        events={selectedEvents}
+      <CalendarDetailModal
+        isOpen={!!selectedEvent}
+        onClose={() => setSelectedEvent(null)}
+        event={selectedEvent}
+        onDelete={handleDeleteEvent}
+        onUpdate={handleUpdateEvent}
       />
 
       <header className="flex justify-between items-center px-2">
@@ -105,8 +173,6 @@ const CalendarPage = () => {
                         <div 
                             key={i} 
                             onClick={() => setSelectedDate(date)}
-                            // 더블 클릭 시 상세 모달 오픈 (PC UX)
-                            onDoubleClick={() => setIsDetailModalOpen(true)}
                             className={`relative rounded-2xl p-2 cursor-pointer transition-all border flex flex-col items-center justify-start pt-3 gap-1 ${isSelected ? 'bg-amber-100 border-amber-300 shadow-md ring-2 ring-amber-100 scale-105 z-10' : 'bg-white/50 border-transparent hover:bg-white hover:border-gray-200 hover:shadow-sm'}`}
                         >
                             <span className={`text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full ${isToday ? 'bg-gray-800 text-white' : isSelected ? 'text-amber-700' : 'text-gray-600'}`}>
@@ -127,15 +193,11 @@ const CalendarPage = () => {
         <div className="lg:w-96 flex flex-col gap-6">
             <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 h-full flex flex-col">
                 <div className="flex justify-between items-end mb-6">
-                    {/* ★ [Update] 여기를 클릭하면 상세 모달 오픈 */}
-                    <div 
-                        onClick={() => setIsDetailModalOpen(true)}
-                        className="group cursor-pointer"
-                    >
-                        <p className="text-gray-400 text-sm font-bold uppercase tracking-wider flex items-center gap-1 group-hover:text-indigo-500 transition-colors">
-                            Selected Date <ExternalLink className="w-3 h-3" />
+                    <div>
+                        <p className="text-gray-400 text-sm font-bold uppercase tracking-wider">
+                            Selected Date
                         </p>
-                        <h3 className="text-3xl font-black text-gray-800 mt-1 group-hover:text-indigo-600 transition-colors">
+                        <h3 className="text-3xl font-black text-gray-800 mt-1">
                             {selectedDate.getDate()}일 <span className="text-lg font-bold text-gray-400 ml-2">{['일','월','화','수','목','금','토'][selectedDate.getDay()]}요일</span>
                         </h3>
                     </div>
@@ -148,9 +210,9 @@ const CalendarPage = () => {
                 <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2">
                     {selectedEvents.length > 0 ? (
                         selectedEvents.map(event => (
-                            <div 
-                                key={event.id} 
-                                onClick={() => setIsDetailModalOpen(true)} // 항목 클릭 시에도 상세 오픈
+                            <div
+                                key={event.id}
+                                onClick={() => handleEventClick(event)}
                                 className="group flex items-start gap-4 p-4 rounded-2xl border border-gray-100 hover:border-amber-200 hover:bg-amber-50/50 transition-all cursor-pointer bg-gray-50/50"
                             >
                                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm bg-white ${event.type === 'hospital' ? 'text-rose-500' : event.type === 'event' ? 'text-purple-500' : 'text-amber-500'}`}>
@@ -162,8 +224,19 @@ const CalendarPage = () => {
                                         {event.type === 'hospital' && <span className="text-[10px] font-bold text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded">병원</span>}
                                     </div>
                                     <h4 className="font-bold text-gray-800 truncate">{event.title}</h4>
-                                    <div className="flex items-center gap-1 mt-1 text-xs text-gray-400"><MapPin className="w-3 h-3" />{event.location}</div>
+                                    <div className="flex items-center gap-1 mt-1 text-xs text-gray-400"><MapPin className="w-3 h-3" />{event.location || '장소 미정'}</div>
                                 </div>
+                                <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (window.confirm('이 일정을 삭제하시겠습니까?')) {
+                                        handleDeleteEvent(event.id);
+                                      }
+                                    }}
+                                    className="p-2 rounded-full text-gray-300 hover:text-rose-500 hover:bg-rose-50 transition-colors shrink-0"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </button>
                             </div>
                         ))
                     ) : (
