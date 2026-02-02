@@ -2,32 +2,36 @@ import React, { useState, useEffect } from 'react';
 import { X, Check, MapPin, Clock, AlignLeft, Calendar as CalIcon } from 'lucide-react';
 
 const CalendarInputModal = ({ isOpen, onClose, onSave, selectedDate }) => {
-  if (!isOpen) return null;
-
-  // 구글 캘린더 API 필드와 매핑하기 좋은 상태 변수들
   const [title, setTitle] = useState(''); // summary
   const [time, setTime] = useState('12:00'); // start.dateTime (시간 부분)
   const [location, setLocation] = useState(''); // location
   const [description, setDescription] = useState(''); // description
   const [type, setType] = useState('todo'); // colorId 매핑용 (병원, 이벤트, 할일)
+  const [saving, setSaving] = useState(false);
 
   // 모달 열릴 때 초기화
   useEffect(() => {
-    setTitle('');
-    setTime('12:00');
-    setLocation('');
-    setDescription('');
-    setType('todo');
+    if (isOpen) {
+      setTitle('');
+      setTime('12:00');
+      setLocation('');
+      setDescription('');
+      setType('todo');
+      setSaving(false);
+    }
   }, [isOpen]);
 
-  const handleSubmit = () => {
+  if (!isOpen) return null;
+
+  const handleSubmit = async () => {
     if (!title) {
       alert('일정 제목을 입력해주세요!');
       return;
     }
+    if (saving) return;
 
-    // 부모 컴포넌트로 데이터 전달
-    onSave({
+    setSaving(true);
+    await onSave({
       title,
       time,
       location,
@@ -35,12 +39,13 @@ const CalendarInputModal = ({ isOpen, onClose, onSave, selectedDate }) => {
       type,
       date: selectedDate // 날짜는 부모가 선택한 날짜 사용
     });
+    setSaving(false);
     onClose();
   };
 
   // 날짜 포맷팅 (YYYY년 MM월 DD일)
-  const dateStr = selectedDate.toLocaleDateString('ko-KR', { 
-    year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' 
+  const dateStr = selectedDate.toLocaleDateString('ko-KR', {
+    year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
   });
 
   return (
@@ -134,12 +139,13 @@ const CalendarInputModal = ({ isOpen, onClose, onSave, selectedDate }) => {
         </div>
 
         {/* 버튼 */}
-        <button 
+        <button
           onClick={handleSubmit}
-          className="w-full mt-6 py-4 bg-indigo-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-2"
+          disabled={saving}
+          className="w-full mt-6 py-4 bg-indigo-600 disabled:bg-gray-300 text-white rounded-2xl font-bold text-lg shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-2"
         >
           <Check className="w-5 h-5" />
-          일정 추가하기
+          {saving ? '저장 중...' : '일정 추가하기'}
         </button>
       </div>
     </div>

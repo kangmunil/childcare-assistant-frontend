@@ -1,7 +1,7 @@
 import React from 'react';
-import { X, MapPin, Clock, Calendar as CalIcon, Syringe, PartyPopper } from 'lucide-react';
+import { X, MapPin, Clock, Calendar as CalIcon, Syringe, PartyPopper, Trash2 } from 'lucide-react';
 
-const DayDetailModal = ({ isOpen, onClose, date, events }) => {
+const DayDetailModal = ({ isOpen, onClose, date, events, onDelete }) => {
   if (!isOpen) return null;
 
   // 날짜 포맷팅 (예: 2025년 12월 3일 수요일)
@@ -35,9 +35,10 @@ const DayDetailModal = ({ isOpen, onClose, date, events }) => {
         
         {/* 헤더 (배경 그라데이션) */}
         <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-8 text-white shrink-0 relative">
-            <button 
-                onClick={onClose} 
-                className="absolute top-6 right-6 p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors backdrop-blur-md"
+            <button
+                type="button"
+                onClick={onClose}
+                className="absolute top-6 right-6 z-10 w-10 h-10 flex items-center justify-center bg-white/20 hover:bg-white/30 rounded-full transition-colors [&>svg]:pointer-events-none"
             >
                 <X className="w-5 h-5 text-white" />
             </button>
@@ -72,7 +73,21 @@ const DayDetailModal = ({ isOpen, onClose, date, events }) => {
                                         <Clock className="w-3 h-3" />
                                         {event.time}
                                     </span>
-                                    {event.type === 'hospital' && <span className="text-[10px] font-bold text-rose-500 bg-rose-50 px-2 py-1 rounded-md">병원 방문</span>}
+                                    <div className="flex items-center gap-2">
+                                        {event.type === 'hospital' && <span className="text-[10px] font-bold text-rose-500 bg-rose-50 px-2 py-1 rounded-md">병원 방문</span>}
+                                        {onDelete && (
+                                            <button
+                                                onClick={() => {
+                                                  if (window.confirm('이 일정을 삭제하시겠습니까?')) {
+                                                    onDelete(event.id);
+                                                  }
+                                                }}
+                                                className="p-1.5 rounded-lg text-gray-300 hover:text-rose-500 hover:bg-rose-50 transition-colors"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                                 <h3 className="text-lg font-bold text-gray-800 mb-1">{event.title}</h3>
                                 <div className="flex items-center gap-1 text-sm text-gray-400 mb-3">
