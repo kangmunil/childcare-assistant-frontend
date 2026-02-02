@@ -20,19 +20,23 @@ const Header = () => {
   // 현재 선택된 아이 (없으면 첫 번째)
   const currentChild = children.find(c => c.id === activeChildId) || children[0];
 
-  const handleAddChild = (e) => {
+  const handleAddChild = async (e) => {
     e.preventDefault();
     if (!newChildName || !newChildDate) return;
 
-    addChild({
+    const result = await addChild({
         name: newChildName,
-        birthDate: newChildDate,
-        gender: newChildGender
+        birthDay: newChildDate,
+        gender: newChildGender === 'female' ? 'F' : 'M'
     });
 
-    setNewChildName('');
-    setNewChildDate('');
-    setIsModalOpen(false);
+    if (result.success) {
+      setNewChildName('');
+      setNewChildDate('');
+      setIsModalOpen(false);
+    } else {
+      alert(result.message);
+    }
   };
 
   // 이미지 에러 시 기본 이미지로 대체하는 핸들러

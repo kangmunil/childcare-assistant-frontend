@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from '../api/supabase';
 import useStore from '../store/useStore';
 
@@ -7,11 +7,11 @@ const AuthContext = createContext({});
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  // Zustand 스토어 액션
-  const { fetchUserInfo, fetchChildren } = useStore();
+  const initialized = useRef(false);
 
   useEffect(() => {
+    // getSession() 중복 호출 방지 위해 주석 처리
+    /*
     // 1. 초기 세션 확인
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -28,30 +28,38 @@ export function AuthProvider({ children }) {
       }
       setLoading(false);
     });
-
+*/
     // 2. 인증 상태 변경 감지
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('Auth event:', event);
         setSession(session);
 
-        if (event === 'SIGNED_IN' && session) {
+        if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session) {
+          // StrictMode 이중 마운트 방지
+          if (initialized.current) return;
+          initialized.current = true;
+
           useStore.setState({
             isLoggedIn: true,
             user: session.user,
             token: session.access_token,
           });
-          // 로그인 시 데이터 갱신
-          fetchUserInfo();
-          fetchChildren();
+          useStore.getState().fetchUserInfo();
+        }
+
+        if (event === 'INITIAL_SESSION' && !session) { // 세션 없음
+          initialized.current = true;
         }
 
         if (event === 'SIGNED_OUT') {
+          initialized.current = false;
           useStore.setState({
             isLoggedIn: false,
             user: null,
             token: null,
             children: [],
+            childrenLoaded: false,
             activeChildId: null,
           });
         }
@@ -62,11 +70,13 @@ export function AuthProvider({ children }) {
           });
           console.log('토큰 자동 갱신됨');
         }
+
+        setLoading(false);
       }
     );
 
     return () => subscription.unsubscribe();
-  }, [fetchUserInfo, fetchChildren]);
+  }, []);
 
   // 소셜 로그인 (카카오/구글)
   const signInWithOAuth = async (provider) => {
