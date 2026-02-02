@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Image as ImageIcon, X } from 'lucide-react';
+import api from '../lib/api';
 
 const PostWritePage = () => {
   const navigate = useNavigate();
-  const [category, setCategory] = useState('qna');
+  const [category, setCategory] = useState('');
   const [images, setImages] = useState([]); // 이미지 미리보기용
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const handleImageUpload = (e) => {
     // 실제 업로드 로직 대신 미리보기 URL만 생성 (더미)
@@ -19,6 +24,34 @@ const PostWritePage = () => {
     }
   };
 
+  const handleSubmit = async () => {
+    if (isSubmitting) return;
+    if (!category) {
+      setErrorMessage('카테고리를 선택해주세요.');
+      return;
+    }
+    if (!title.trim() || !content.trim()) {
+      setErrorMessage('제목과 내용을 입력해주세요.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage('');
+
+    try {
+      await api.post('/boards/community/items', {
+        title: title.trim(),
+        content: content.trim(),
+        category
+      });
+      navigate('/community');
+    } catch (error) {
+      setErrorMessage(error?.message || '글 작성에 실패했습니다.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-white pb-24 md:pb-0 relative max-w-2xl mx-auto">
       
@@ -29,10 +62,11 @@ const PostWritePage = () => {
         </button>
         <h1 className="text-lg font-bold text-stone-800">글쓰기</h1>
         <button 
-            onClick={() => { alert('등록되었습니다!'); navigate('/community'); }}
-            className="text-amber-500 font-bold text-sm hover:text-amber-600"
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            className={`text-sm font-bold ${isSubmitting ? 'text-stone-300' : 'text-amber-500 hover:text-amber-600'}`}
         >
-            완료
+            {isSubmitting ? '등록 중...' : '완료'}
         </button>
       </div>
 
@@ -53,18 +87,28 @@ const PostWritePage = () => {
                 </button>
             ))}
         </div>
+        {errorMessage === '카테고리를 선택해주세요.' && (
+            <p className="text-sm text-rose-500">{errorMessage}</p>
+        )}
 
         {/* 3. 입력 폼 */}
         <div className="space-y-4">
             <input 
                 type="text" 
                 placeholder="제목을 입력하세요" 
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
                 className="w-full text-lg font-bold text-stone-800 placeholder:text-stone-300 focus:outline-none"
             />
             <textarea 
                 placeholder="내용을 입력하세요. (육아 고민, 자랑, 팁 등 자유롭게 나눠요)" 
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
                 className="w-full h-64 text-base text-stone-600 placeholder:text-stone-300 focus:outline-none resize-none leading-relaxed"
             />
+            {errorMessage && errorMessage !== '카테고리를 선택해주세요.' && (
+                <p className="text-sm text-rose-500">{errorMessage}</p>
+            )}
         </div>
 
         {/* 4. 이미지 첨부 영역 */}
