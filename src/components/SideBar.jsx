@@ -1,13 +1,14 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { 
-  Home, 
-  Calendar, 
-  PenTool, 
-  BookOpen, 
-  Settings, 
+import {
+  Home,
+  Calendar,
+  PenTool,
+  BookOpen,
+  Settings,
   LogOut,
-  Users 
+  Users,
+  ClipboardList
 } from 'lucide-react';
 import useStore from '../store/useStore'; 
 
@@ -24,6 +25,7 @@ const SideBar = () => {
     { icon: Home, label: '홈 대시보드', path: '/dashboard' },
     { icon: Calendar, label: '육아 캘린더', path: '/calendar' },
     { icon: PenTool, label: '성장 기록', path: '/record' },
+    { icon: ClipboardList, label: '하루 일지', path: '/diary' },
     { icon: Users, label: '육아 커뮤니티', path: '/community' },
     { icon: BookOpen, label: '육아 가이드', path: '/guide' },
     { icon: Settings, label: '가족 설정', path: '/settings' },
