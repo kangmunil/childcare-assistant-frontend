@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Clock, Milk, Moon, Activity, Droplet, Baby, Utensils, Heart, BarChart3 } from 'lucide-react';
+import { Plus, Clock, Trash2, Milk, Moon, Activity, Droplet, Baby, Utensils, Heart, BarChart3 } from 'lucide-react';
 import useStore from '../store/useStore';
 import TrackerCard from '../components/TrackerCard';
 import DiaryStatsModal from '../components/DiaryStatsModal';
@@ -39,6 +39,7 @@ const DiaryPage = () => {
     fetchSummary,
     fetchDiaryLogs,
     createDiary,
+    deleteDiary,
   } = useStore();
 
   const [selectedDate, setSelectedDate] = useState(() => {
@@ -141,6 +142,17 @@ const DiaryPage = () => {
 
     if (result.success) {
       setInputAmount('');
+      await fetchSummary(currentChild.id, selectedDate);
+      await loadLogs();
+    }
+  };
+
+  const handleDeleteLog = async (diaryId) => {
+    if (!currentChild?.id || !diaryId) return;
+    if (!window.confirm('이 기록을 삭제하시겠습니까?')) return;
+
+    const result = await deleteDiary(currentChild.id, diaryId);
+    if (result.success) {
       await fetchSummary(currentChild.id, selectedDate);
       await loadLogs();
     }
@@ -298,6 +310,12 @@ const DiaryPage = () => {
                           <span className="text-xs text-gray-400 ml-0.5">{selectedItem?.unit || ''}</span>
                         </div>
                       </div>
+                      <button
+                        onClick={() => handleDeleteLog(log.id)}
+                        className="p-2 text-gray-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-full transition-colors opacity-0 group-hover:opacity-100"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   ))
                 )}

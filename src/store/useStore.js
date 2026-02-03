@@ -314,6 +314,23 @@ const useStore = create(
         }
       },
 
+      // 일지 삭제 (DELETE /api/children/{childId}/diaries/{diaryId})
+      deleteDiary: async (childId, diaryId) => {
+        try {
+          const response = await http.delete(`/children/${childId}/diaries/${diaryId}`);
+          const { status, message } = response.data;
+          if (status === 'success') {
+            return { success: true };
+          }
+          alert(message || '일지 삭제에 실패했습니다.');
+          return { success: false };
+        } catch (error) {
+          const msg = error.response?.data?.message || error.message || '일지 삭제 중 오류가 발생했습니다.';
+          alert(msg);
+          return { success: false };
+        }
+      },
+
       // ==========================================
       // [4] 자녀 관리 API 연동 (명세서 반영)
       // ==========================================
