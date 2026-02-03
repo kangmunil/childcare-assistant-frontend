@@ -3,7 +3,7 @@ import useStore from '../store/useStore';
 
 // 1. Axios 인스턴스 생성 (기지국 설정)
 // 백엔드 주소가 아직 없으면 로컬호스트(8080)를 기본값으로 둠
-const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8081';
 
 const client = axios.create({
   baseURL,

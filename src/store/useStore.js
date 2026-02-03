@@ -700,19 +700,61 @@ const useStore = create(
       // [6] 성장 이력 API 연동
       // ==========================================
 
-      // 성장 이력 목록 조회
-      fetchGrowthHistory: async (childId) => {
+      // 성장 이력 목록 조회 (기간별 통계)
+      fetchGrowthHistory: async (childId, periodType = 'day') => {
         try {
-          const response = await http.get(`/children/${childId}/history`);
+          const today = new Date();
+          const formatDate = (date) => {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+          };
+
+          let startDate, endDate;
+
+          if (periodType === 'day') {
+            // 일별: 금주 월요일 ~ 금주 일요일
+            const dayOfWeek = today.getDay();
+            const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+            const thisMonday = new Date(today);
+            thisMonday.setDate(today.getDate() + diffToMonday);
+            const thisSunday = new Date(thisMonday);
+            thisSunday.setDate(thisMonday.getDate() + 6);
+            startDate = formatDate(thisMonday);
+            endDate = formatDate(thisSunday);
+          } else if (periodType === 'week') {
+            // 주별: 이번달 1일 ~ 이번달 말일
+            const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+            const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            startDate = formatDate(firstDay);
+            endDate = formatDate(lastDay);
+          } else if (periodType === 'month') {
+            // 월별: 이번연도 1월 1일 ~ 12월 31일
+            startDate = `${today.getFullYear()}-01-01`;
+            endDate = `${today.getFullYear()}-12-31`;
+          } else if (periodType === 'year') {
+            // 연도별: 5년전 1월 1일 ~ 올해 12월 31일
+            startDate = `${today.getFullYear() - 5}-01-01`;
+            endDate = `${today.getFullYear()}-12-31`;
+          }
+
+          const response = await http.get(`/children/${childId}/history/stats`, {
+            params: {
+              type: periodType,
+              startDate,
+              endDate,
+            },
+          });
           const { status, data } = response.data;
           if (status === 'success') {
-            const records = (data || []).map(item => ({
-              month: item.month || '',
+            const records = (data?.stats || []).map(item => ({
+              period: item.period || '',
               height: parseFloat(item.height) || 0,
               weight: parseFloat(item.weight) || 0,
             }));
             set({ growthRecords: records, growthRecordsLoaded: true });
-            return { success: true };
+            return { success: true, data };
           }
           set({ growthRecordsLoaded: true });
           return { success: false };
@@ -727,6 +769,7 @@ const useStore = create(
       createGrowthHistory: async (childId, data) => {
         try {
           const payload = {
+            ghDate: data.date,
             height: String(data.height),
             weight: String(data.weight),
           };
