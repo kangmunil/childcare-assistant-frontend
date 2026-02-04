@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Clock, Trash2, Milk, Moon, Activity, Droplet, Baby, Utensils, Heart, BarChart3 } from 'lucide-react';
+import { Plus, Clock, Trash2, Milk, Moon, Activity, Droplet, Baby, Utensils, Heart, BarChart3, FileText, Save } from 'lucide-react';
 import useStore from '../store/useStore';
 import TrackerCard from '../components/TrackerCard';
 import DiaryStatsModal from '../components/DiaryStatsModal';
@@ -40,6 +40,10 @@ const DiaryPage = () => {
     fetchDiaryLogs,
     createDiary,
     deleteDiary,
+    fetchDiaryMemo,
+    createDiaryMemo,
+    updateDiaryMemo,
+    deleteDiaryMemo,
   } = useStore();
 
   const [selectedDate, setSelectedDate] = useState(() => {
@@ -52,6 +56,9 @@ const DiaryPage = () => {
   const [logs, setLogs] = useState([]);
   const [saving, setSaving] = useState(false);
   const [isStatsOpen, setIsStatsOpen] = useState(false);
+  const [memo, setMemo] = useState(null);
+  const [memoContent, setMemoContent] = useState('');
+  const [savingMemo, setSavingMemo] = useState(false);
 
   const currentChild = children.find(c => c.id === activeChildId) || children[0];
 
@@ -76,6 +83,7 @@ const DiaryPage = () => {
       }
       fetchSummary(currentChild.id, selectedDate);
       loadLogs();
+      loadMemo();
     }
   }, [childrenLoaded, currentChild?.id, selectedDate]);
 
@@ -104,6 +112,46 @@ const DiaryPage = () => {
       }))
       .sort((a, b) => a.time.localeCompare(b.time));
     setLogs(sorted);
+  };
+
+  const loadMemo = async () => {
+    if (!currentChild?.id) return;
+    const result = await fetchDiaryMemo(currentChild.id, selectedDate);
+    if (result.success && result.data) {
+      setMemo(result.data);
+      setMemoContent(result.data.memo || '');
+    } else {
+      setMemo(null);
+      setMemoContent('');
+    }
+  };
+
+  const handleSaveMemo = async () => {
+    if (!currentChild?.id || savingMemo) return;
+    setSavingMemo(true);
+
+    let result;
+    if (memo?.id) {
+      result = await updateDiaryMemo(currentChild.id, memo.id, memoContent);
+    } else {
+      result = await createDiaryMemo(currentChild.id, selectedDate, memoContent);
+    }
+
+    if (result.success) {
+      await loadMemo();
+    }
+    setSavingMemo(false);
+  };
+
+  const handleDeleteMemo = async () => {
+    if (!currentChild?.id || !memo?.id) return;
+    if (!window.confirm('메모를 삭제하시겠습니까?')) return;
+
+    const result = await deleteDiaryMemo(currentChild.id, memo.id);
+    if (result.success) {
+      setMemo(null);
+      setMemoContent('');
+    }
   };
 
   const selectedItem = diaryItems.find(item => item.id === selectedItemId);
@@ -170,6 +218,7 @@ const DiaryPage = () => {
         logs={logs}
         diaryItems={diaryItems}
         selectedDate={selectedDate}
+        memo={memo}
       />
 
       {/* 헤더 */}
@@ -193,10 +242,9 @@ const DiaryPage = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto min-h-0 pr-1 custom-scrollbar">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* 왼쪽: 입력 영역 */}
-          <div className="lg:col-span-7 flex flex-col gap-6">
-            {/* 트래커 카드들 */}
+        <div className="flex flex-col lg:grid lg:grid-cols-12 gap-6">
+          {/* 트래커 카드들 - 모바일 1번째, 데스크톱 좌측 1행 */}
+          <div className="order-1 lg:order-none lg:col-span-7">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-1">
               {trackerData.map(item => {
                 const isSelected = item.id === selectedItemId;
@@ -222,8 +270,43 @@ const DiaryPage = () => {
                 );
               })}
             </div>
+          </div>
 
-            {/* 입력 폼 */}
+          {/* 오늘의 메모 - 모바일 3번째, 데스크톱 우측 1행 */}
+          <div className="order-3 lg:order-none lg:col-span-5">
+            <div className="bg-white dark:bg-gray-800 rounded-[2rem] p-4 border border-gray-100 dark:border-gray-700 shadow-sm">
+              <div className="flex items-center gap-2 mb-2">
+                <FileText className="w-4 h-4 text-gray-400" />
+                <h3 className="text-sm font-bold text-gray-800 dark:text-white">오늘의 메모</h3>
+              </div>
+              <textarea
+                value={memoContent}
+                onChange={(e) => setMemoContent(e.target.value)}
+                placeholder="오늘 하루를 간단히 기록해보세요."
+                className="w-full h-16 bg-gray-50 dark:bg-gray-700 border-0 rounded-xl p-3 text-sm text-gray-700 dark:text-gray-200 placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-amber-400 mb-2"
+              />
+              <div className="flex justify-end gap-2">
+                {memo?.id && (
+                  <button
+                    onClick={handleDeleteMemo}
+                    className="px-3 py-1.5 text-xs font-medium text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors"
+                  >
+                    삭제
+                  </button>
+                )}
+                <button
+                  onClick={handleSaveMemo}
+                  disabled={savingMemo || !memoContent.trim()}
+                  className="px-4 py-1.5 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors disabled:bg-gray-300 dark:disabled:bg-gray-600 flex items-center gap-1"
+                >
+                  {savingMemo ? '저장 중...' : (memo?.id ? '수정' : '저장')}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 입력 폼 - 모바일 2번째, 데스크톱 좌측 2행 */}
+          <div className="order-2 lg:order-none lg:col-span-7">
             <div className="bg-white dark:bg-gray-800 rounded-[2rem] p-6 border border-gray-100 dark:border-gray-700 shadow-sm">
               <h3 className="text-base font-bold text-gray-800 dark:text-white mb-4">
                 {selectedItem?.name || '항목'} 기록하기
@@ -235,7 +318,7 @@ const DiaryPage = () => {
                     type="time"
                     value={inputTime}
                     onChange={(e) => setInputTime(e.target.value)}
-                    className={`w-full bg-gray-50 dark:bg-gray-700 border-2 border-transparent focus:border-amber-400 focus:bg-white dark:focus:bg-gray-600 rounded-xl font-bold text-gray-700 dark:text-gray-200 py-3 px-4 transition-all outline-none`}
+                    className="w-full bg-gray-50 dark:bg-gray-700 border-2 border-transparent focus:border-amber-400 focus:bg-white dark:focus:bg-gray-600 rounded-xl font-bold text-gray-700 dark:text-gray-200 py-3 px-4 transition-all outline-none"
                   />
                 </div>
                 <div className="flex-1">
@@ -248,7 +331,7 @@ const DiaryPage = () => {
                     value={inputAmount}
                     onChange={(e) => setInputAmount(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleAddLog()}
-                    className={`w-full bg-gray-50 dark:bg-gray-700 border-2 border-transparent focus:border-amber-400 focus:bg-white dark:focus:bg-gray-600 rounded-xl font-bold text-gray-700 dark:text-gray-200 py-3 px-4 transition-all outline-none`}
+                    className="w-full bg-gray-50 dark:bg-gray-700 border-2 border-transparent focus:border-amber-400 focus:bg-white dark:focus:bg-gray-600 rounded-xl font-bold text-gray-700 dark:text-gray-200 py-3 px-4 transition-all outline-none"
                   />
                 </div>
                 <button
@@ -262,23 +345,9 @@ const DiaryPage = () => {
             </div>
           </div>
 
-          {/* 오른쪽: 하루 요약 + 오늘의 기록 목록 */}
-          <div className="lg:col-span-5 flex flex-col gap-4">
-            {/* 전체 기록 요약 */}
-            <div className="bg-gradient-to-br from-amber-600 to-orange-600 rounded-[2rem] p-6 text-white shadow-lg">
-              <h3 className="text-sm font-bold mb-3">오늘 하루 요약</h3>
-              <div className="grid grid-cols-2 gap-3">
-                {trackerData.slice(0, 4).map(item => (
-                  <div key={item.id} className="bg-black/20 backdrop-blur-sm rounded-xl p-3">
-                    <p className="text-xs text-white/80 mb-1">{item.name}</p>
-                    <p className="text-lg font-black text-white">{item.value} <span className="text-xs font-normal text-white/70">{item.unit}</span></p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* 오늘의 기록 목록 */}
-            <div className="bg-white dark:bg-gray-800 rounded-[2rem] p-6 border border-gray-100 dark:border-gray-700 shadow-sm flex-1 flex flex-col min-h-[300px]">
+          {/* 오늘의 기록 목록 - 모바일 4번째, 데스크톱 우측 2행 */}
+          <div className="order-4 lg:order-none lg:col-span-5 lg:col-start-8">
+            <div className="bg-white dark:bg-gray-800 rounded-[2rem] p-6 border border-gray-100 dark:border-gray-700 shadow-sm flex flex-col min-h-[300px]">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-base font-bold text-gray-800 dark:text-white">
                   오늘의 {selectedItem?.name || ''} 기록

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, BarChart3 } from 'lucide-react';
+import React from 'react';
+import { X, BarChart3, FileText } from 'lucide-react';
 
 // 30분 간격 시간 슬롯 생성 (00:00 ~ 23:30)
 const timeSlots = [];
@@ -10,7 +10,7 @@ for (let h = 0; h < 24; h++) {
 
 // 항목별 색상
 const itemColors = {
-  BABY_FOOD: 'bg-yellow-400',
+  'BABY FOOD': 'bg-amber-400',
   PLAY: 'bg-emerald-400',
   POTTY: 'bg-sky-400',
   NAP: 'bg-indigo-400',
@@ -21,7 +21,7 @@ const itemColors = {
   DIAPER: 'bg-sky-400',
 };
 
-const DiaryStatsModal = ({ isOpen, onClose, logs, diaryItems, selectedDate }) => {
+const DiaryStatsModal = ({ isOpen, onClose, logs, diaryItems, selectedDate, memo }) => {
   if (!isOpen) return null;
 
   // 날짜 포맷팅
@@ -98,7 +98,7 @@ const DiaryStatsModal = ({ isOpen, onClose, logs, diaryItems, selectedDate }) =>
         </div>
 
         {/* 테이블 */}
-        <div className="flex-1 overflow-auto px-4">
+        <div className="flex-1 overflow-auto px-4 pb-4">
           <table className="w-full border-collapse">
             <thead className="sticky top-0 bg-white dark:bg-gray-800 z-10">
               <tr>
@@ -146,6 +146,17 @@ const DiaryStatsModal = ({ isOpen, onClose, logs, diaryItems, selectedDate }) =>
           {displayItems.length === 0 && (
             <div className="text-center py-12 text-gray-400">
               <p>표시할 항목이 없습니다.</p>
+            </div>
+          )}
+
+          {/* 메모 영역 */}
+          {memo?.memo && (
+            <div className="mt-4 mb-4 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800">
+              <div className="flex items-center gap-2 mb-2">
+                <FileText className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                <span className="text-sm font-bold text-amber-700 dark:text-amber-300">메모</span>
+              </div>
+              <p className="text-sm text-amber-800 dark:text-amber-200 whitespace-pre-wrap">{memo.memo}</p>
             </div>
           )}
         </div>
