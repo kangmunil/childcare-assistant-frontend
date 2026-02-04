@@ -314,6 +314,96 @@ const useStore = create(
         }
       },
 
+      // 일지 삭제 (DELETE /api/children/{childId}/diaries/{diaryId})
+      deleteDiary: async (childId, diaryId) => {
+        try {
+          const response = await http.delete(`/children/${childId}/diaries/${diaryId}`);
+          const { status, message } = response.data;
+          if (status === 'success') {
+            return { success: true };
+          }
+          alert(message || '일지 삭제에 실패했습니다.');
+          return { success: false };
+        } catch (error) {
+          const msg = error.response?.data?.message || error.message || '일지 삭제 중 오류가 발생했습니다.';
+          alert(msg);
+          return { success: false };
+        }
+      },
+
+      // 메모 조회 (GET /api/children/{childId}/diaries/memo?date=YYYY-MM-DD)
+      fetchDiaryMemo: async (childId, date) => {
+        try {
+          const response = await http.get(`/children/${childId}/diaries/memo`, {
+            params: { date },
+          });
+          const { status, data } = response.data;
+          if (status === 'success') {
+            return { success: true, data: data || null };
+          }
+          return { success: false, data: null };
+        } catch (error) {
+          console.error('메모 조회 실패:', error);
+          return { success: false, data: null };
+        }
+      },
+
+      // 메모 생성 (POST /api/children/{childId}/diaries/memo)
+      createDiaryMemo: async (childId, date, content) => {
+        try {
+          const response = await http.post(`/children/${childId}/diaries/memo`, {
+            date,
+            memo: content,
+          });
+          const { status, data, message } = response.data;
+          if (status === 'success') {
+            return { success: true, data };
+          }
+          alert(message || '메모 저장에 실패했습니다.');
+          return { success: false };
+        } catch (error) {
+          const msg = error.response?.data?.message || error.message || '메모 저장 중 오류가 발생했습니다.';
+          alert(msg);
+          return { success: false };
+        }
+      },
+
+      // 메모 수정 (PUT /api/children/{childId}/diaries/memo/{memoId})
+      updateDiaryMemo: async (childId, memoId, content) => {
+        try {
+          const response = await http.put(`/children/${childId}/diaries/memo/${memoId}`, {
+            memo: content,
+          });
+          const { status, data, message } = response.data;
+          if (status === 'success') {
+            return { success: true, data };
+          }
+          alert(message || '메모 수정에 실패했습니다.');
+          return { success: false };
+        } catch (error) {
+          const msg = error.response?.data?.message || error.message || '메모 수정 중 오류가 발생했습니다.';
+          alert(msg);
+          return { success: false };
+        }
+      },
+
+      // 메모 삭제 (DELETE /api/children/{childId}/diaries/memo/{memoId})
+      deleteDiaryMemo: async (childId, memoId) => {
+        try {
+          const response = await http.delete(`/children/${childId}/diaries/memo/${memoId}`);
+          const { status, message } = response.data;
+          if (status === 'success') {
+            return { success: true };
+          }
+          alert(message || '메모 삭제에 실패했습니다.');
+          return { success: false };
+        } catch (error) {
+          const msg = error.response?.data?.message || error.message || '메모 삭제 중 오류가 발생했습니다.';
+          alert(msg);
+          return { success: false };
+        }
+      },
+
       // ==========================================
       // [4] 자녀 관리 API 연동 (명세서 반영)
       // ==========================================
@@ -700,19 +790,61 @@ const useStore = create(
       // [6] 성장 이력 API 연동
       // ==========================================
 
-      // 성장 이력 목록 조회
-      fetchGrowthHistory: async (childId) => {
+      // 성장 이력 목록 조회 (기간별 통계)
+      fetchGrowthHistory: async (childId, periodType = 'day') => {
         try {
-          const response = await http.get(`/children/${childId}/history`);
+          const today = new Date();
+          const formatDate = (date) => {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+          };
+
+          let startDate, endDate;
+
+          if (periodType === 'day') {
+            // 일별: 금주 월요일 ~ 금주 일요일
+            const dayOfWeek = today.getDay();
+            const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+            const thisMonday = new Date(today);
+            thisMonday.setDate(today.getDate() + diffToMonday);
+            const thisSunday = new Date(thisMonday);
+            thisSunday.setDate(thisMonday.getDate() + 6);
+            startDate = formatDate(thisMonday);
+            endDate = formatDate(thisSunday);
+          } else if (periodType === 'week') {
+            // 주별: 이번달 1일 ~ 이번달 말일
+            const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+            const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            startDate = formatDate(firstDay);
+            endDate = formatDate(lastDay);
+          } else if (periodType === 'month') {
+            // 월별: 이번연도 1월 1일 ~ 12월 31일
+            startDate = `${today.getFullYear()}-01-01`;
+            endDate = `${today.getFullYear()}-12-31`;
+          } else if (periodType === 'year') {
+            // 연도별: 5년전 1월 1일 ~ 올해 12월 31일
+            startDate = `${today.getFullYear() - 5}-01-01`;
+            endDate = `${today.getFullYear()}-12-31`;
+          }
+
+          const response = await http.get(`/children/${childId}/history/stats`, {
+            params: {
+              type: periodType,
+              startDate,
+              endDate,
+            },
+          });
           const { status, data } = response.data;
           if (status === 'success') {
-            const records = (data || []).map(item => ({
-              month: item.month || '',
+            const records = (data?.stats || []).map(item => ({
+              period: item.period || '',
               height: parseFloat(item.height) || 0,
               weight: parseFloat(item.weight) || 0,
             }));
             set({ growthRecords: records, growthRecordsLoaded: true });
-            return { success: true };
+            return { success: true, data };
           }
           set({ growthRecordsLoaded: true });
           return { success: false };
@@ -727,6 +859,7 @@ const useStore = create(
       createGrowthHistory: async (childId, data) => {
         try {
           const payload = {
+            ghDate: data.date,
             height: String(data.height),
             weight: String(data.weight),
           };

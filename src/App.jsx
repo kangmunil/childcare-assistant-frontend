@@ -15,7 +15,8 @@ import CommunityPage from './pages/CommunityPage';
 import PostWritePage from './pages/PostWritePage';
 import PostDetailPage from './pages/PostDetailPage';
 import ChildSetupPage from './pages/ChildSetupPage';
-import AuthCallbackPage from './pages/AuthCallbackPage'; 
+import AuthCallbackPage from './pages/AuthCallbackPage';
+import DiaryPage from './pages/DiaryPage'; 
 
 import SideBar from './components/SideBar'; 
 import BottomNavBar from './components/BottomNavBar';
@@ -86,6 +87,7 @@ function App() {
         
         {/* --- 메인 앱 (Layout 적용) --- */}
         <Route path="/dashboard" element={<MainLayout><DashboardPage /></MainLayout>} />
+        <Route path="/diary" element={<MainLayout><DiaryPage /></MainLayout>} />
         <Route path="/calendar" element={<MainLayout><CalendarPage /></MainLayout>} />
         <Route path="/record" element={<MainLayout><RecordPage /></MainLayout>} />
         <Route path="/guide" element={<MainLayout><GuidePage /></MainLayout>} /> 

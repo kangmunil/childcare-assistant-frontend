@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Ruler, Weight, Check, Plus, Mic, Camera, Loader2 } from 'lucide-react';
+import { Ruler, Weight, Check, Plus, Mic, Camera, Loader2, MoreVertical } from 'lucide-react';
 import useStore from '../store/useStore';
 import { calculateMonths } from '../utils/dateUtils';
 import GrowthInputModal from '../components/GrowthInputModal';
@@ -21,6 +21,15 @@ const RecordPage = () => {
   const [isListening, setIsListening] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [togglingId, setTogglingId] = useState(null);
+  const [periodType, setPeriodType] = useState('day');
+  const [showPeriodMenu, setShowPeriodMenu] = useState(false);
+
+  const periodOptions = [
+    { value: 'day', label: '일별' },
+    { value: 'week', label: '주별' },
+    { value: 'month', label: '월별' },
+    { value: 'year', label: '연도별' },
+  ];
 
   const birthDay = currentChild.birthDay || currentChild.birthDate;
   const currentMonths = birthDay ? calculateMonths(birthDay) : 0;
@@ -28,10 +37,24 @@ const RecordPage = () => {
   // 성장 이력 + 체크리스트 데이터 로드
   useEffect(() => {
     if (childrenLoaded && currentChild?.id) {
-      fetchGrowthHistory(currentChild.id);
+      fetchGrowthHistory(currentChild.id, periodType);
       fetchAllChecklists(currentChild.id, [CHECKLIST_DIVISION]);
     }
-  }, [childrenLoaded, currentChild?.id]);
+  }, [childrenLoaded, currentChild?.id, periodType]);
+
+  const handlePeriodChange = (newPeriod) => {
+    setPeriodType(newPeriod);
+    setShowPeriodMenu(false);
+  };
+
+  // 메뉴 바깥 클릭 시 닫기
+  useEffect(() => {
+    const handleClickOutside = () => setShowPeriodMenu(false);
+    if (showPeriodMenu) {
+      document.addEventListener('click', handleClickOutside);
+    }
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [showPeriodMenu]);
 
   // 체크된 항목 ID 설정
   const checkedItemIds = new Set(checklistChecked.map(item => item.itemId));
@@ -75,9 +98,11 @@ const RecordPage = () => {
     if (!currentChild?.id) return;
 
     await createGrowthHistory(currentChild.id, {
+      date: newData.date,
       height: newData.height,
       weight: newData.weight,
     });
+    await fetchGrowthHistory(currentChild.id, periodType);
   };
 
   // ---------------------------------------------------------
@@ -226,29 +251,171 @@ const RecordPage = () => {
               </div>
             </div>
 
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 shadow-sm flex flex-col min-h-[350px]">
-              <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-6">성장 추이</h3>
-              <div className="flex-1 flex items-end justify-between px-2 gap-4 relative h-64">
-                <div className="absolute inset-0 flex flex-col justify-between text-xs text-gray-300 pointer-events-none pb-6">
-                  <div className="border-b border-gray-50 dark:border-gray-700 h-0 w-full"></div>
-                  <div className="border-b border-gray-50 dark:border-gray-700 h-0 w-full"></div>
-                  <div className="border-b border-gray-50 dark:border-gray-700 h-0 w-full"></div>
-                  <div className="border-b border-gray-50 dark:border-gray-700 h-0 w-full"></div>
-                </div>
-
-                {growthRecords.map((data, idx) => (
-                  <div key={idx} className="h-full flex flex-col justify-end items-center gap-2 z-10 group cursor-pointer w-full">
-                    <div className="text-[10px] font-bold text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-800 text-white px-1.5 py-0.5 rounded mb-1">
-                      {data.height}cm
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 shadow-sm flex flex-col min-h-[350px] relative">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-bold text-gray-800 dark:text-white">성장 추이</h3>
+                <div className="relative">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowPeriodMenu(!showPeriodMenu); }}
+                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  >
+                    <MoreVertical className="w-5 h-5 text-gray-500" />
+                  </button>
+                  {showPeriodMenu && (
+                    <div className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-20 min-w-[100px] overflow-hidden">
+                      {periodOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          onClick={() => handlePeriodChange(option.value)}
+                          className={`w-full px-4 py-2 text-sm text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${
+                            periodType === option.value
+                              ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-bold'
+                              : 'text-gray-700 dark:text-gray-300'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
                     </div>
-                    <div
-                      style={{ height: `${Math.min((data.height / 100) * 100, 100)}%` }}
-                      className="w-full max-w-[40px] bg-amber-200 dark:bg-amber-800 rounded-t-xl relative group-hover:bg-amber-400 dark:group-hover:bg-amber-600 transition-colors"
-                    ></div>
-                    <span className="text-xs font-bold text-gray-400">{data.month}</span>
-                  </div>
-                ))}
+                  )}
+                </div>
               </div>
+              {(() => {
+                if (growthRecords.length === 0) {
+                  return (
+                    <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+                      데이터가 없습니다
+                    </div>
+                  );
+                }
+
+                const heights = growthRecords.map(d => d.height);
+                const weights = growthRecords.map(d => d.weight);
+                const heightMax = Math.ceil(Math.max(...heights) / 10) * 10 || 100;
+                const weightMin = Math.floor(Math.min(...weights) / 5) * 5;
+                const weightMax = Math.ceil(Math.max(...weights) / 5) * 5 || 20;
+
+                // 몸무게 Y좌표 계산 (0~100% 범위)
+                const getWeightY = (val) => {
+                  const range = weightMax - weightMin || 1;
+                  return 100 - ((val - weightMin) / range) * 100;
+                };
+
+                const weightYLabels = [];
+                for (let i = 0; i <= 4; i++) {
+                  weightYLabels.push(Math.round(weightMin + ((weightMax - weightMin) / 4) * i));
+                }
+
+                return (
+                  <div className="flex-1 flex flex-col">
+                    {/* 범례 */}
+                    <div className="flex gap-4 mb-2 justify-end text-xs">
+                      <div className="flex items-center gap-1">
+                        <div className="w-3 h-3 bg-amber-200 dark:bg-amber-800 rounded"></div>
+                        <span className="text-gray-500 dark:text-gray-400">키 (cm)</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div className="w-3 h-0.5 bg-blue-500 rounded"></div>
+                        <span className="text-gray-500 dark:text-gray-400">몸무게 (kg)</span>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 flex">
+                      {/* 왼쪽 Y축 (키) */}
+                      <div className="flex flex-col justify-between text-[10px] text-amber-600 dark:text-amber-400 pr-1 pb-6">
+                        {[heightMax, Math.round(heightMax * 0.75), Math.round(heightMax * 0.5), Math.round(heightMax * 0.25), 0].map((v, i) => (
+                          <span key={i}>{v}</span>
+                        ))}
+                      </div>
+
+                      {/* 그래프 영역 */}
+                      <div className="flex-1 flex flex-col">
+                        <div className="flex-1 relative h-48">
+                          {/* 가로 그리드 라인 */}
+                          <div className="absolute inset-0 flex flex-col justify-between pointer-events-none pb-6">
+                            {[0, 1, 2, 3, 4].map(i => (
+                              <div key={i} className="border-b border-gray-100 dark:border-gray-700 h-0 w-full"></div>
+                            ))}
+                          </div>
+
+                          {/* 막대그래프 (키) */}
+                          <div className="absolute inset-0 flex items-end justify-between gap-2 pb-6">
+                            {growthRecords.map((data, idx) => (
+                              <div key={idx} className="flex-1 h-full flex flex-col justify-end items-center group cursor-pointer">
+                                <div className="text-[10px] font-bold text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-800 text-white px-1.5 py-0.5 rounded mb-1 whitespace-nowrap z-20">
+                                  {data.height}cm / {data.weight}kg
+                                </div>
+                                <div
+                                  style={{ height: `${Math.min((data.height / heightMax) * 100, 100)}%` }}
+                                  className="w-full max-w-[40px] bg-amber-200 dark:bg-amber-800 rounded-t-xl group-hover:bg-amber-400 dark:group-hover:bg-amber-600 transition-colors"
+                                ></div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* 직선그래프 (몸무게) - SVG 오버레이 */}
+                          <svg
+                            className="absolute inset-0 w-full pointer-events-none"
+                            style={{ height: 'calc(100% - 24px)' }}
+                            viewBox="0 0 100 100"
+                            preserveAspectRatio="none"
+                          >
+                            <polyline
+                              points={growthRecords.map((d, i) => {
+                                const x = ((i + 0.5) / growthRecords.length) * 100;
+                                const y = getWeightY(d.weight);
+                                return `${x},${y}`;
+                              }).join(' ')}
+                              fill="none"
+                              stroke="#3b82f6"
+                              strokeWidth="2"
+                              vectorEffect="non-scaling-stroke"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                          {/* 몸무게 데이터 포인트 */}
+                          <div className="absolute inset-0 flex pointer-events-none" style={{ height: 'calc(100% - 24px)' }}>
+                            {growthRecords.map((d, i) => (
+                              <div key={i} className="flex-1 relative">
+                                <div
+                                  className="absolute left-1/2 -translate-x-1/2 w-2 h-2 bg-blue-500 rounded-full"
+                                  style={{ top: `${getWeightY(d.weight)}%`, transform: 'translate(-50%, -50%)' }}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* X축 레이블 */}
+                        <div className="flex justify-between text-[10px] text-gray-400">
+                          {growthRecords.map((d, i) => {
+                            let label = d.period;
+                            if (periodType === 'day' || periodType === 'week') {
+                              label = d.period.slice(5); // MM-DD
+                            } else if (periodType === 'month') {
+                              label = d.period.slice(5, 7) + '월'; // MM월
+                            }
+                            // year는 그대로 표시 (YYYY)
+                            return (
+                              <span key={i} className="flex-1 text-center">
+                                {label}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* 오른쪽 Y축 (몸무게) */}
+                      <div className="flex flex-col justify-between text-[10px] text-blue-600 dark:text-blue-400 pl-1 pb-6">
+                        {[...weightYLabels].reverse().map((v, i) => (
+                          <span key={i}>{v}</span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 

@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { Plus, Bell, X, Baby } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Bell, X, Baby, Settings } from 'lucide-react';
 import useStore from '../store/useStore';
 import NotificationDropdown from './NotificationDropdown';
 
 const Header = () => {
   const { children, activeChildId, setActiveChild, addChild, notifications } = useStore();
-  
+  const navigate = useNavigate();
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isNotiOpen, setIsNotiOpen] = useState(false);
 
@@ -81,27 +83,37 @@ const Header = () => {
             </button>
         </div>
 
-        {/* 우측 알림 버튼 영역 */}
-        <div className="relative">
-            <button 
-                onClick={() => setIsNotiOpen(!isNotiOpen)}
-                className={`p-2.5 rounded-full shadow-sm border transition-all ${
-                    isNotiOpen ? 'bg-amber-50 border-amber-200 text-amber-500' : 'bg-white border-gray-100 text-gray-400 hover:bg-gray-50'
-                }`}
+        {/* 우측 버튼 영역 */}
+        <div className="flex items-center gap-2">
+            {/* 설정 버튼 (모바일만) */}
+            <button
+                onClick={() => navigate('/settings')}
+                className="md:hidden p-2.5 rounded-full shadow-sm border bg-white border-gray-100 text-gray-400 hover:bg-gray-50 transition-all"
             >
-                <Bell className="w-5 h-5" />
-                {unreadCount > 0 && (
-                    <div className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border border-white"></div>
-                )}
+                <Settings className="w-5 h-5" />
             </button>
 
-            {/* 알림 드롭다운 */}
-            {isNotiOpen && (
-                // 위치 잡기 위해 div로 한 번 감싸는 것 추천 (스타일은 NotificationDropdown 내부에 맡김)
-                <div className="absolute right-0 top-full mt-2 z-50">
-                     <NotificationDropdown onClose={() => setIsNotiOpen(false)} />
-                </div>
-            )}
+            {/* 알림 버튼 */}
+            <div className="relative">
+                <button
+                    onClick={() => setIsNotiOpen(!isNotiOpen)}
+                    className={`p-2.5 rounded-full shadow-sm border transition-all ${
+                        isNotiOpen ? 'bg-amber-50 border-amber-200 text-amber-500' : 'bg-white border-gray-100 text-gray-400 hover:bg-gray-50'
+                    }`}
+                >
+                    <Bell className="w-5 h-5" />
+                    {unreadCount > 0 && (
+                        <div className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border border-white"></div>
+                    )}
+                </button>
+
+                {/* 알림 드롭다운 */}
+                {isNotiOpen && (
+                    <div className="absolute right-0 top-full mt-2 z-50">
+                         <NotificationDropdown onClose={() => setIsNotiOpen(false)} />
+                    </div>
+                )}
+            </div>
         </div>
       </header>
 
