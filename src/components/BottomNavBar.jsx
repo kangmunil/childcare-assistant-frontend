@@ -1,11 +1,12 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { 
-    Home, 
-    Calendar, 
-    PenTool, 
+import {
+    Home,
+    Calendar,
+    PenTool,
     BookOpen,
-    Users // [추가] 아이콘 임포트
+    Users,
+    ClipboardList
 } from 'lucide-react';
 
 const BottomNavBar = () => {
@@ -13,8 +14,8 @@ const BottomNavBar = () => {
         { icon: Home, label: '홈', path: '/dashboard' },
         { icon: Calendar, label: '일정', path: '/calendar' },
         { icon: PenTool, label: '기록', path: '/record' },
+        { icon: ClipboardList, label: '일지', path: '/diary' },
         { icon: Users, label: '커뮤니티', path: '/community' },
-        { icon: BookOpen, label: '가이드', path: '/guide' },
     ];
 
     return (
