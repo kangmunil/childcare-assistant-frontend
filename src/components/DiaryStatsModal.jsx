@@ -62,7 +62,7 @@ const DiaryStatsModal = ({ isOpen, onClose, logs, diaryItems, selectedDate, memo
   const displayItems = diaryItems.length > 0 ? diaryItems : [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pb-20 md:pb-4 md:pl-20 lg:pl-72 bg-black/60 backdrop-blur-sm">
       <div className="bg-white dark:bg-gray-800 rounded-[2rem] w-full max-w-2xl max-h-[85vh] shadow-2xl overflow-hidden flex flex-col">
         {/* 헤더 */}
         <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-gray-700 shrink-0">
