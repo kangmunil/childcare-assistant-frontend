@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import useStore from './store/useStore';
 
 // 페이지들
@@ -22,6 +22,7 @@ import SideBar from './components/SideBar';
 import BottomNavBar from './components/BottomNavBar';
 import ChatWindow, { FloatingChatButton } from './components/ChatWindow';
 import Header from './components/Header';
+import CommunityShell from './components/CommunityShell';
 
 // MainLayout: 사이드바, 헤더, 채팅창이 있는 '메인 화면' 껍데기
 const MainLayout = ({ children }) => {
@@ -56,6 +57,12 @@ const MainLayout = ({ children }) => {
         </div>
     );
 };
+
+const CommunityLayout = () => (
+    <MainLayout>
+        <CommunityShell />
+    </MainLayout>
+);
 
 const ChatWindowWrapper = () => {
     const { isChatOpen } = useStore();
@@ -92,10 +99,12 @@ function App() {
         <Route path="/record" element={<MainLayout><RecordPage /></MainLayout>} />
         <Route path="/guide" element={<MainLayout><GuidePage /></MainLayout>} /> 
         <Route path="/settings" element={<MainLayout><SettingsPage /></MainLayout>} />
-        <Route path="/community" element={<MainLayout><CommunityPage /></MainLayout>} />
-        
-        <Route path="/community/write" element={<PostWritePage />} />
-        <Route path="/community/:id" element={<PostDetailPage />} />
+
+        <Route path="/community" element={<CommunityLayout />}>
+            <Route index element={<CommunityPage />} />
+            <Route path="write" element={<PostWritePage />} />
+            <Route path=":id" element={<PostDetailPage />} />
+        </Route>
         
         <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
