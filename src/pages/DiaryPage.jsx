@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Clock, Trash2, Milk, Moon, Activity, Droplet, Baby, Utensils, Heart, BarChart3, FileText, Save } from 'lucide-react';
+import { Plus, Clock, Trash2, Milk, Moon, Activity, Droplet, Baby, Utensils, Heart, BarChart3, FileText, Save, ChevronDown } from 'lucide-react';
 import useStore from '../store/useStore';
 import TrackerCard from '../components/TrackerCard';
 import DiaryStatsModal from '../components/DiaryStatsModal';
@@ -32,6 +32,7 @@ const DiaryPage = () => {
     children,
     childrenLoaded,
     activeChildId,
+    setActiveChild,
     diaryItems,
     diaryItemsLoaded,
     summaryValues,
@@ -58,6 +59,8 @@ const DiaryPage = () => {
   const [isStatsOpen, setIsStatsOpen] = useState(false);
   const [memo, setMemo] = useState(null);
   const [memoContent, setMemoContent] = useState('');
+  const [isChildMenuOpen, setIsChildMenuOpen] = useState(false);
+  const childMenuRef = useRef(null);
   const [savingMemo, setSavingMemo] = useState(false);
 
   const currentChild = children.find(c => c.id === activeChildId) || children[0];
@@ -72,6 +75,7 @@ const DiaryPage = () => {
   // 자녀 변경 시 선택 항목 리셋
   useEffect(() => {
     setSelectedItemId(null);
+    setIsChildMenuOpen(false);
   }, [activeChildId]);
 
   // 자녀/날짜 변경 시 데이터 조회
@@ -99,6 +103,23 @@ const DiaryPage = () => {
     const now = new Date();
     setInputTime(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
   }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!childMenuRef.current) return;
+      if (!childMenuRef.current.contains(event.target)) {
+        setIsChildMenuOpen(false);
+      }
+    };
+
+    if (isChildMenuOpen) {
+      window.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      window.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isChildMenuOpen]);
 
   const loadLogs = async () => {
     if (!currentChild?.id) return;
@@ -223,7 +244,44 @@ const DiaryPage = () => {
 
       {/* 헤더 */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-1">
-        <h2 className="text-xl font-bold text-gray-800 dark:text-white">하루 일지</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-xl font-bold text-gray-800 dark:text-white">하루 일지</h2>
+          <div ref={childMenuRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setIsChildMenuOpen((prev) => !prev)}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              <span>{currentChild?.name || '아이'}</span>
+              <ChevronDown className={`w-4 h-4 transition-transform ${isChildMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isChildMenuOpen && (
+              <div className="absolute left-0 mt-2 w-48 rounded-2xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg p-2 z-20">
+                {children.map((child) => (
+                  <button
+                    key={child.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveChild(child.id);
+                      setIsChildMenuOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                      child.id === currentChild?.id
+                        ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                        : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <span>{child.name}</span>
+                    {child.id === currentChild?.id && (
+                      <span className="text-xs font-bold text-amber-600 dark:text-amber-300">선택됨</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsStatsOpen(true)}

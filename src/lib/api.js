@@ -38,8 +38,8 @@ const api = {
   /**
    * GET 요청
    */
-  get(endpoint) {
-    return this.request(endpoint, { method: 'GET' });
+  get(endpoint, options = {}) {
+    return this.request(endpoint, { method: 'GET', ...options });
   },
 
   /**
