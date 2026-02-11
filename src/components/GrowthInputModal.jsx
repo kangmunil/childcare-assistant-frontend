@@ -2,33 +2,33 @@ import React, { useState } from 'react';
 import { X, Check, Baby } from 'lucide-react';
 
 const GrowthInputModal = ({ isOpen, onClose, onSave }) => {
+  const today = new Date().toISOString().split('T')[0];
+  const [height, setHeight] = useState('');
+  const [weight, setWeight] = useState('');
+  const [date, setDate] = useState(today);
+  const [saving, setSaving] = useState(false);
+
   // 모달이 닫혀있으면 아무것도 렌더링하지 않음
   if (!isOpen) return null;
 
-  const [height, setHeight] = useState('');
-  const [weight, setWeight] = useState('');
-
-  const handleSubmit = () => {
-    // 1. 입력값 검증
+  const handleSubmit = async () => {
     if (!height || !weight) {
       alert('키와 몸무게를 모두 입력해주세요!');
       return;
     }
+    if (saving) return;
+    setSaving(true);
 
-    // 2. 데이터 전송 (로그 출력)
-    console.log("✅ [모달] 저장 버튼 클릭됨!");
-    console.log("📤 [모달] 보내는 데이터:", { height, weight });
-
-    // 부모(RecordPage)에게 데이터 전달
-    onSave({ 
-      height: parseFloat(height), 
+    await onSave({
+      height: parseFloat(height),
       weight: parseFloat(weight),
-      date: new Date().toISOString() 
+      date: date
     });
 
-    // 3. 초기화 및 닫기
+    setSaving(false);
     setHeight('');
     setWeight('');
+    setDate(today);
     onClose();
   };
 
@@ -54,6 +54,17 @@ const GrowthInputModal = ({ isOpen, onClose, onSave }) => {
 
         {/* 입력 폼 */}
         <div className="space-y-4">
+          {/* 날짜 입력 */}
+          <div>
+            <label className="block text-xs font-bold text-gray-400 mb-1 ml-1">날짜 (Date)</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full p-4 bg-gray-50 rounded-2xl border-2 border-transparent focus:border-indigo-500 focus:bg-white outline-none font-bold text-lg transition-all text-gray-800"
+            />
+          </div>
+
           {/* 키 입력 */}
           <div>
             <label className="block text-xs font-bold text-gray-400 mb-1 ml-1">키 (Height)</label>
@@ -87,12 +98,13 @@ const GrowthInputModal = ({ isOpen, onClose, onSave }) => {
         </div>
 
         {/* 버튼 */}
-        <button 
+        <button
           onClick={handleSubmit}
-          className="w-full mt-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-2"
+          disabled={saving}
+          className="w-full mt-8 py-4 bg-indigo-600 disabled:bg-gray-300 text-white rounded-2xl font-bold text-lg shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-2"
         >
           <Check className="w-5 h-5" />
-          기록 저장하기
+          {saving ? '저장 중...' : '기록 저장하기'}
         </button>
       </div>
     </div>
