@@ -152,29 +152,31 @@ const Header = () => {
                 <div className="text-center mb-6">
                     <h3 className="text-xl font-black text-gray-800 dark:text-white">새 아이 등록</h3>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 mb-4">소중한 아이의 정보를 입력해주세요</p>
-                    <div
-                        onClick={() => fileInputRef.current?.click()}
-                        className="relative w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-700 cursor-pointer overflow-hidden border-2 border-dashed border-gray-300 dark:border-gray-500 hover:border-amber-400 transition-colors mx-auto"
-                    >
-                        {imagePreview ? (
-                            <img src={imagePreview} alt="미리보기" className="w-full h-full object-cover" />
-                        ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center text-gray-400">
-                                <Camera className="w-6 h-6" />
-                                <span className="text-[10px] mt-1">사진</span>
-                            </div>
-                        )}
-                    </div>
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={handleImageSelect}
-                    />
                 </div>
 
                 <form onSubmit={handleAddChild} className="space-y-4">
+                    <div className="text-center mb-6">
+                        <div
+                            onClick={() => fileInputRef.current?.click()}
+                            className="relative w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-700 cursor-pointer overflow-hidden border-2 border-dashed border-gray-300 dark:border-gray-500 hover:border-amber-400 transition-colors mx-auto"
+                        >
+                            {imagePreview ? (
+                                <img src={imagePreview} alt="미리보기" className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full flex flex-col items-center justify-center text-gray-400">
+                                    <Camera className="w-6 h-6" />
+                                    <span className="text-[10px] mt-1">사진</span>
+                                </div>
+                            )}
+                        </div>
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={handleImageSelect}
+                        />
+                    </div>
                     <div>
                         <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1.5 ml-1">이름 / 태명</label>
                         <input

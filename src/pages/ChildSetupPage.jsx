@@ -32,6 +32,7 @@ const ChildSetupPage = () => {
   const [childData, setChildData] = useState({
     name: '',
     birthDate: '',
+    birthTime: '',
     gender: 'male' // 기본값
   });
 
@@ -48,6 +49,7 @@ const ChildSetupPage = () => {
     const result = await addChild({
       name: childData.name,
       birthDay: childData.birthDate, // API 필드명: birthDay
+      birthTime: childData.birthTime || '00:00:00',
       gender: childData.gender === 'male' ? 'M' : 'F'
     });
 
@@ -68,11 +70,18 @@ const ChildSetupPage = () => {
   return (
     <div className="h-screen bg-[#FDFCF8] flex flex-col items-center justify-center p-6 font-sans">
       <div className="w-full max-w-sm space-y-8">
-        
+
+        <div className="text-center space-y-2">
+          <h2 className="text-2xl font-black text-gray-800">우리 아이를 소개해주세요</h2>
+          <p className="text-gray-500 text-sm mb-4">맞춤형 육아 정보를 위해 꼭 필요해요!</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4 bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+
         <div className="text-center space-y-2">
           <div
             onClick={() => fileInputRef.current?.click()}
-            className="relative w-20 h-20 rounded-full bg-amber-50 border-2 border-dashed border-amber-300 hover:border-amber-500 cursor-pointer overflow-hidden mx-auto mb-4 transition-colors"
+            className="w-20 h-20 rounded-full bg-amber-50 border-2 border-dashed border-amber-300 hover:border-amber-500 cursor-pointer overflow-hidden mx-auto transition-colors"
           >
             {imagePreview ? (
               <img src={imagePreview} alt="미리보기" className="w-full h-full object-cover" />
@@ -82,9 +91,6 @@ const ChildSetupPage = () => {
                 <span className="text-[10px] mt-0.5 font-medium">사진</span>
               </div>
             )}
-            <div className="absolute bottom-0 right-0 w-6 h-6 bg-amber-400 rounded-full flex items-center justify-center shadow">
-              <span className="text-white text-xs font-bold">+</span>
-            </div>
           </div>
           <input
             ref={fileInputRef}
@@ -93,21 +99,17 @@ const ChildSetupPage = () => {
             className="hidden"
             onChange={handleImageSelect}
           />
-          <h2 className="text-2xl font-black text-gray-800">우리 아이를 소개해주세요</h2>
-          <p className="text-gray-500 text-sm">맞춤형 육아 정보를 위해 꼭 필요해요!</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-          
           {/* 이름 입력 */}
           <div className="space-y-1">
             <label className="text-xs font-bold text-gray-500 ml-1">아이 이름 (태명)</label>
             <div className="relative">
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={childData.name}
                 onChange={(e) => setChildData({...childData, name: e.target.value})}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 pl-10 focus:outline-none focus:ring-2 focus:ring-amber-400 text-sm"
+                className="w-full bg-gray-50 rounded-xl px-4 py-3 pl-10 text-sm font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all"
                 placeholder="지우"
               />
               <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -118,14 +120,25 @@ const ChildSetupPage = () => {
           <div className="space-y-1">
             <label className="text-xs font-bold text-gray-500 ml-1">생년월일</label>
             <div className="relative">
-              <input 
-                type="date" 
+              <input
+                type="date"
                 value={childData.birthDate}
                 onChange={(e) => setChildData({...childData, birthDate: e.target.value})}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 pl-10 focus:outline-none focus:ring-2 focus:ring-amber-400 text-sm"
+                className="w-full bg-gray-50 rounded-xl px-4 py-3 pl-10 text-sm font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all"
               />
               <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             </div>
+          </div>
+
+          {/* 출생 시간 */}
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-gray-500 ml-1">출생 시간</label>
+            <input
+              type="time"
+              value={childData.birthTime}
+              onChange={(e) => setChildData({...childData, birthTime: e.target.value})}
+              className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all"
+            />
           </div>
 
           {/* 성별 선택 */}
@@ -138,9 +151,9 @@ const ChildSetupPage = () => {
                   type="button"
                   onClick={() => setChildData({...childData, gender: g})}
                   className={`flex-1 py-3 rounded-xl text-sm font-bold border transition-all ${
-                    childData.gender === g 
-                      ? 'bg-amber-100 border-amber-400 text-amber-700' 
-                      : 'bg-white border-gray-200 text-gray-400 hover:bg-gray-50'
+                    childData.gender === g
+                      ? (g === 'male' ? 'bg-sky-50 border-sky-200 text-sky-500' : 'bg-rose-50 border-rose-200 text-rose-500')
+                      : 'bg-white border-gray-100 text-gray-400 hover:bg-gray-50'
                   }`}
                 >
                   {g === 'male' ? '왕자님 👑' : '공주님 🎀'}
