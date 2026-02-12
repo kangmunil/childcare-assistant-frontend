@@ -51,13 +51,13 @@ const GuidePage = () => {
   };
 
   return (
-    <div className="h-full flex flex-col gap-6 p-4 md:p-0"> {/* 모바일 여백 추가 */}
-      
+    <div className="h-full flex flex-col gap-6">
+
       {/* --- 헤더 섹션 --- */}
-      <div className="shrink-0 space-y-4">
+      <header className="flex justify-between items-center px-2 shrink-0">
         <div>
-          <h2 className="text-2xl font-black text-gray-800 dark:text-white">육아 가이드 📚</h2>
-          <p className="text-sm text-gray-500 mt-1">
+          <h2 className="text-2xl font-black text-gray-800 dark:text-white">육아 가이드</h2>
+          <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">
             {currentChild ? (
               <>현재 <span className="text-amber-500 font-bold">{currentMonths}개월</span>인 {currentChild.name}를 위한 꿀팁</>
             ) : (
@@ -65,18 +65,18 @@ const GuidePage = () => {
             )}
           </p>
         </div>
+      </header>
 
-        {/* 검색창 */}
-        <div className="relative">
-          <input 
-            type="text" 
-            placeholder="궁금한 키워드 검색 (예: 수면, 이유식)" 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl py-3.5 pl-11 pr-4 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all dark:text-white text-sm"
-          />
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-        </div>
+      {/* 검색창 */}
+      <div className="relative shrink-0">
+        <input
+          type="text"
+          placeholder="궁금한 키워드 검색 (예: 수면, 이유식)"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl py-3.5 pl-11 pr-4 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all dark:text-white text-sm"
+        />
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
       </div>
 
       {/* --- 카테고리 탭 (가로 스크롤) --- */}

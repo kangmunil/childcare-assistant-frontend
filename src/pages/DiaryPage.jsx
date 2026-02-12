@@ -222,8 +222,11 @@ const DiaryPage = () => {
       />
 
       {/* 헤더 */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-1">
-        <h2 className="text-xl font-bold text-gray-800 dark:text-white">하루 일지</h2>
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 px-2 shrink-0">
+        <div>
+          <h2 className="text-2xl font-black text-gray-800 dark:text-white">하루 일지</h2>
+          <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">오늘 하루를 기록해보세요</p>
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsStatsOpen(true)}
@@ -239,7 +242,7 @@ const DiaryPage = () => {
             className="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl font-medium text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-amber-400"
           />
         </div>
-      </div>
+      </header>
 
       <div className="flex-1 overflow-y-auto min-h-0 pr-1 custom-scrollbar">
         <div className="flex flex-col lg:grid lg:grid-cols-12 gap-6">

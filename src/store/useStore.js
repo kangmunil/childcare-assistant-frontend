@@ -447,11 +447,13 @@ const useStore = create(
             };
 
             const response = await http.post('/children', payload);
-            const { status, message } = response.data;
+            const { status, data, message } = response.data;
 
             if (status === 'success') {
+                const existingIds = new Set(get().children.map(c => c.id));
                 await get().fetchChildren(); // 목록 새로고침
-                return { success: true, message: '자녀가 등록되었습니다.' };
+                const newChild = get().children.find(c => !existingIds.has(c.id));
+                return { success: true, childId: newChild?.id, message: '자녀가 등록되었습니다.' };
             }
             return { success: false, message: message || '등록 실패' };
         } catch (error) {
@@ -486,6 +488,22 @@ const useStore = create(
             return { success: false, message: message };
         } catch (error) {
             return { success: false, message: error.response?.data?.message || '삭제 실패' };
+        }
+      },
+
+      // 4-5. 자녀 이미지 업로드 (POST /api/children/{childId}/images)
+      uploadChildImage: async (childId, file) => {
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          const response = await http.post(`/children/${childId}/images`, formData);
+          if (response.data.status === 'success') {
+            await get().fetchChildren();
+            return { success: true };
+          }
+          return { success: false, message: response.data.message };
+        } catch (error) {
+          return { success: false, message: error.response?.data?.message || '이미지 업로드 실패' };
         }
       },
 

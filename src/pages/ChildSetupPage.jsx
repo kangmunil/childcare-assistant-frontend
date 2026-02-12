@@ -1,12 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, Baby, Calendar, User } from 'lucide-react';
+import { Loader2, Baby, Calendar, User, Camera } from 'lucide-react';
 import useStore from '../store/useStore';
 
 const ChildSetupPage = () => {
   const navigate = useNavigate();
-  const { addChild } = useStore(); // 스토어의 자녀 추가 함수
+  const { addChild, uploadChildImage } = useStore();
   const [isLoading, setIsLoading] = useState(false);
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+  const handleImageSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      alert('jpg, png, gif, webp 형식의 이미지만 업로드 가능합니다.');
+      e.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setImageFile(file);
+      setImagePreview(ev.target.result);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const [childData, setChildData] = useState({
     name: '',
@@ -34,6 +55,9 @@ const ChildSetupPage = () => {
 
     // 결과 확인 후 처리
     if (result.success) {
+      if (imageFile && result.childId) {
+        await uploadChildImage(result.childId, imageFile);
+      }
       alert(`${childData.name}의 등록이 완료되었습니다! 환영해요 🎉`);
       navigate('/dashboard');
     } else {
@@ -46,9 +70,29 @@ const ChildSetupPage = () => {
       <div className="w-full max-w-sm space-y-8">
         
         <div className="text-center space-y-2">
-          <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
-             <Baby className="w-8 h-8 text-amber-500" />
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="relative w-20 h-20 rounded-full bg-amber-50 border-2 border-dashed border-amber-300 hover:border-amber-500 cursor-pointer overflow-hidden mx-auto mb-4 transition-colors"
+          >
+            {imagePreview ? (
+              <img src={imagePreview} alt="미리보기" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center text-amber-400">
+                <Camera className="w-7 h-7" />
+                <span className="text-[10px] mt-0.5 font-medium">사진</span>
+              </div>
+            )}
+            <div className="absolute bottom-0 right-0 w-6 h-6 bg-amber-400 rounded-full flex items-center justify-center shadow">
+              <span className="text-white text-xs font-bold">+</span>
+            </div>
           </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageSelect}
+          />
           <h2 className="text-2xl font-black text-gray-800">우리 아이를 소개해주세요</h2>
           <p className="text-gray-500 text-sm">맞춤형 육아 정보를 위해 꼭 필요해요!</p>
         </div>

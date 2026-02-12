@@ -143,7 +143,7 @@ const CalendarPage = () => {
 
       <header className="flex justify-between items-center px-2">
         <div>
-            <h2 className="text-2xl font-black text-gray-800">육아 캘린더</h2>
+            <h2 className="text-2xl font-black text-gray-800 dark:text-white">육아 캘린더</h2>
             <p className="text-gray-500 text-sm font-medium">중요한 일정을 놓치지 마세요!</p>
         </div>
         <div className="flex items-center gap-4 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">

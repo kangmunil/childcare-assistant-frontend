@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, User, Shield, HelpCircle, LogOut, ChevronRight, Moon, Volume2, X, Plus, Trash2, AlertTriangle } from 'lucide-react';
-import useStore from '../store/useStore'; 
+import { Bell, User, Shield, HelpCircle, LogOut, ChevronRight, Moon, Volume2, X, Plus, Trash2, AlertTriangle, Pencil, Camera } from 'lucide-react';
+import useStore from '../store/useStore';
 
 // [1] 재사용 가능한 공통 모달 컴포넌트
 const CommonModal = ({ isOpen, onClose, title, children }) => {
@@ -20,7 +20,7 @@ const CommonModal = ({ isOpen, onClose, title, children }) => {
             <X className="w-5 h-5 text-gray-600 dark:text-gray-300" />
           </button>
         </div>
-        <div className="max-h-[70vh] overflow-y-auto no-scrollbar">
+        <div className="max-h-[70vh] overflow-y-auto no-scrollbar px-1 -mx-1">
             {children}
         </div>
       </div>
@@ -39,9 +39,11 @@ const SettingsPage = () => {
     withdrawMember, // 회원 탈퇴 API
     isDarkMode, 
     toggleDarkMode,
-    children,    
+    children,
     addChild,       // 자녀 등록 API
-    deleteChild     // 자녀 삭제 API
+    deleteChild,    // 자녀 삭제 API
+    updateChild,    // 자녀 수정 API
+    uploadChildImage // 자녀 이미지 업로드 API
   } = useStore();
   
   // --- 로컬 UI 상태 ---
@@ -60,7 +62,41 @@ const SettingsPage = () => {
 
   // 자녀 추가 모드 상태
   const [isAddingChild, setIsAddingChild] = useState(false);
-  const [newChildInput, setNewChildInput] = useState({ name: '', age: '' });
+  const [newChildInput, setNewChildInput] = useState({ name: '', birthDay: '', birthTime: '', gender: 'M' });
+
+  // 자녀 수정 모드 상태
+  const [editingChild, setEditingChild] = useState(null);
+
+  // 이미지 관련 상태
+  const [newChildImageFile, setNewChildImageFile] = useState(null);
+  const [newChildImagePreview, setNewChildImagePreview] = useState(null);
+  const [editChildImageFile, setEditChildImageFile] = useState(null);
+  const [editChildImagePreview, setEditChildImagePreview] = useState(null);
+  const newChildFileRef = useRef(null);
+  const editChildFileRef = useRef(null);
+
+  const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+  const handleImageSelect = (e, mode) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      alert('jpg, png, gif, webp 형식의 이미지만 업로드 가능합니다.');
+      e.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      if (mode === 'add') {
+        setNewChildImageFile(file);
+        setNewChildImagePreview(ev.target.result);
+      } else {
+        setEditChildImageFile(file);
+        setEditChildImagePreview(ev.target.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   // --- 핸들러 함수들 ---
 
@@ -102,32 +138,63 @@ const SettingsPage = () => {
 
   // 3. 자녀 추가 (API 호출)
   const handleSaveNewChild = async () => {
-    if (!newChildInput.name || !newChildInput.age) {
-        alert('이름과 나이를 모두 입력해주세요.');
+    if (!newChildInput.name || !newChildInput.birthDay) {
+        alert('이름과 생년월일을 모두 입력해주세요.');
         return;
     }
 
     // 나이를 기반으로 생년월일 계산 (YYYY-MM-DD 형식)
-    const birthYear = new Date().getFullYear() - parseInt(newChildInput.age);
-    const calculatedBirthDay = `${birthYear}-01-01`; 
+    // const birthYear = new Date().getFullYear() - parseInt(newChildInput.age);
+    // const calculatedBirthDay = `${birthYear}-01-01`;
 
     // API 호출
     const result = await addChild({
         name: newChildInput.name,
-        birthDay: calculatedBirthDay,
-        // 명세서 필수값 (추후 UI 추가 가능)
-        birthTime: "09:00", 
-        gender: "M", 
-        height: 50, 
-        weight: 3.5 
+        birthDay: newChildInput.birthDay,
+        birthTime: newChildInput.birthTime || "00:00:00",
+        gender: newChildInput.gender || "M",
     });
 
     if (result.success) {
+        if (newChildImageFile && result.childId) {
+          await uploadChildImage(result.childId, newChildImageFile);
+        }
         alert("자녀가 등록되었습니다.");
-        setNewChildInput({ name: '', age: '' });
+        setNewChildInput({ name: '', birthDay: '', birthTime: '', gender: 'M' });
+        setNewChildImageFile(null);
+        setNewChildImagePreview(null);
         setIsAddingChild(false);
     } else {
         alert(`등록 실패: ${result.message}`);
+    }
+  };
+
+  // 5. 자녀 수정 (API 호출)
+  const handleUpdateChild = async () => {
+    if (!editingChild.name || !editingChild.birthDay) {
+        alert('이름과 생년월일을 모두 입력해주세요.');
+        return;
+    }
+
+    const result = await updateChild(editingChild.id, {
+        name: editingChild.name,
+        birthDay: editingChild.birthDay,
+        birthTime: editingChild.birthTime || "00:00:00",
+        gender: editingChild.gender || "M",
+        height: editingChild.height,
+        weight: editingChild.weight,
+    });
+
+    if (result.success) {
+        if (editChildImageFile) {
+          await uploadChildImage(editingChild.id, editChildImageFile);
+        }
+        alert("자녀 정보가 수정되었습니다.");
+        setEditingChild(null);
+        setEditChildImageFile(null);
+        setEditChildImagePreview(null);
+    } else {
+        alert(`수정 실패: ${result.message}`);
     }
   };
 
@@ -190,9 +257,13 @@ const SettingsPage = () => {
 
   return (
     <>
-    {/* 전체 배경색 다크모드 적용 */}
-    <div className="pb-24 pt-6 px-4 h-full overflow-y-auto bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
-      <h1 className="text-2xl font-black text-gray-800 dark:text-white mb-6">설정</h1>
+    <div className="h-full flex flex-col gap-6 pb-24 md:pb-0">
+      <header className="flex justify-between items-center px-2 shrink-0">
+        <div>
+          <h2 className="text-2xl font-black text-gray-800 dark:text-white">가족 설정</h2>
+          <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">계정과 앱 설정을 관리해요</p>
+        </div>
+      </header>
 
       <Section title="계정 관리">
         <MenuItem 
@@ -287,44 +358,186 @@ const SettingsPage = () => {
         onClose={() => {
             setActiveModal(null);
             setIsAddingChild(false);
+            setEditingChild(null);
+            setNewChildImageFile(null);
+            setNewChildImagePreview(null);
+            setEditChildImageFile(null);
+            setEditChildImagePreview(null);
         }} 
-        title={isAddingChild ? "새 자녀 등록" : "자녀 관리"}
+        title={editingChild ? "자녀 정보 수정" : isAddingChild ? "새 자녀 등록" : "자녀 관리"}
     >
-        {isAddingChild ? (
-            /* [B] 입력 모드 */
+        {editingChild ? (
+            /* [C] 수정 모드 */
             <div className="space-y-4 animate-fade-in">
+                <div className="flex justify-center">
+                    <div
+                        onClick={() => editChildFileRef.current?.click()}
+                        className="relative w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-700 cursor-pointer overflow-hidden border-2 border-dashed border-gray-300 dark:border-gray-500 hover:border-amber-400 transition-colors"
+                    >
+                        {editChildImagePreview || editingChild.photoUrl ? (
+                            <img src={editChildImagePreview || editingChild.photoUrl} alt="미리보기" className="w-full h-full object-cover" />
+                        ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center text-gray-400">
+                                <Camera className="w-6 h-6" />
+                                <span className="text-[10px] mt-1">사진</span>
+                            </div>
+                        )}
+                    </div>
+                    <input
+                        ref={editChildFileRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => handleImageSelect(e, 'edit')}
+                    />
+                </div>
                 <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">이름 / 태명</label>
-                    <input 
-                        type="text" 
-                        placeholder="예: 튼튼이"
-                        value={newChildInput.name}
-                        onChange={(e) => setNewChildInput({...newChildInput, name: e.target.value})}
-                        className="w-full bg-gray-50 dark:bg-gray-700 dark:text-white p-3 rounded-xl border border-gray-200 dark:border-gray-600 focus:outline-none focus:border-amber-400"
+                    <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">이름</label>
+                    <input
+                        type="text"
+                        value={editingChild.name}
+                        onChange={(e) => setEditingChild({...editingChild, name: e.target.value})}
+                        className="w-full bg-gray-50 dark:bg-gray-700 dark:text-white rounded-xl px-4 py-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-300 transition-all"
                         autoFocus
                     />
                 </div>
                 <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1">나이 (만 나이)</label>
-                    <input 
-                        type="number" 
-                        placeholder="숫자만 입력"
-                        value={newChildInput.age}
-                        onChange={(e) => setNewChildInput({...newChildInput, age: e.target.value})}
-                        className="w-full bg-gray-50 dark:bg-gray-700 dark:text-white p-3 rounded-xl border border-gray-200 dark:border-gray-600 focus:outline-none focus:border-amber-400"
+                    <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">생년월일</label>
+                    <input
+                        type="date"
+                        value={editingChild.birthDay || ''}
+                        onChange={(e) => setEditingChild({...editingChild, birthDay: e.target.value})}
+                        className="w-full bg-gray-50 dark:bg-gray-700 dark:text-white rounded-xl px-4 py-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-300 transition-all"
                     />
                 </div>
-                
-                <div className="flex gap-2 mt-4">
-                    <button 
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">출생 시간</label>
+                    <input
+                        type="time"
+                        value={editingChild.birthTime || ''}
+                        onChange={(e) => setEditingChild({...editingChild, birthTime: e.target.value})}
+                        className="w-full bg-gray-50 dark:bg-gray-700 dark:text-white rounded-xl px-4 py-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-300 transition-all"
+                    />
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">성별</label>
+                    <div className="flex gap-2">
+                        {['M', 'F'].map((g) => (
+                            <button
+                                key={g}
+                                type="button"
+                                onClick={() => setEditingChild({...editingChild, gender: g})}
+                                className={`flex-1 py-3 rounded-xl text-sm font-bold border transition-all ${
+                                    editingChild.gender === g
+                                        ? (g === 'M' ? 'bg-sky-50 border-sky-200 text-sky-500 dark:bg-sky-900/30 dark:border-sky-500 dark:text-sky-300' : 'bg-rose-50 border-rose-200 text-rose-500 dark:bg-rose-900/30 dark:border-rose-500 dark:text-rose-300')
+                                        : 'bg-white border-gray-100 text-gray-400 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300'
+                                }`}
+                            >
+                                {g === 'M' ? '왕자님 👑' : '공주님 🎀'}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="flex gap-2 mt-4 pb-2">
+                    <button
+                        onClick={() => setEditingChild(null)}
+                        className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 font-bold rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600"
+                    >
+                        취소
+                    </button>
+                    <button
+                        onClick={handleUpdateChild}
+                        className="flex-1 py-3 bg-amber-500 text-white font-bold rounded-xl hover:bg-amber-600 shadow-lg shadow-amber-200 dark:shadow-none"
+                    >
+                        저장
+                    </button>
+                </div>
+            </div>
+        ) : isAddingChild ? (
+            /* [B] 입력 모드 */
+            <div className="space-y-4 animate-fade-in">
+                <div className="flex justify-center">
+                    <div
+                        onClick={() => newChildFileRef.current?.click()}
+                        className="relative w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-700 cursor-pointer overflow-hidden border-2 border-dashed border-gray-300 dark:border-gray-500 hover:border-amber-400 transition-colors"
+                    >
+                        {newChildImagePreview ? (
+                            <img src={newChildImagePreview} alt="미리보기" className="w-full h-full object-cover" />
+                        ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center text-gray-400">
+                                <Camera className="w-6 h-6" />
+                                <span className="text-[10px] mt-1">사진</span>
+                            </div>
+                        )}
+                    </div>
+                    <input
+                        ref={newChildFileRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => handleImageSelect(e, 'add')}
+                    />
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">이름 / 태명</label>
+                    <input
+                        type="text"
+                        placeholder="예: 튼튼이"
+                        value={newChildInput.name}
+                        onChange={(e) => setNewChildInput({...newChildInput, name: e.target.value})}
+                        className="w-full bg-gray-50 dark:bg-gray-700 dark:text-white rounded-xl px-4 py-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-300 transition-all"
+                        autoFocus
+                    />
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">생년월일</label>
+                    <input
+                        type="date"
+                        value={newChildInput.birthDay}
+                        onChange={(e) => setNewChildInput({...newChildInput, birthDay: e.target.value})}
+                        className="w-full bg-gray-50 dark:bg-gray-700 dark:text-white rounded-xl px-4 py-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-300 transition-all"
+                    />
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">출생 시간</label>
+                    <input
+                        type="time"
+                        value={newChildInput.birthTime}
+                        onChange={(e) => setNewChildInput({...newChildInput, birthTime: e.target.value})}
+                        className="w-full bg-gray-50 dark:bg-gray-700 dark:text-white rounded-xl px-4 py-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-300 transition-all"
+                    />
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">성별</label>
+                    <div className="flex gap-2">
+                        {['M', 'F'].map((g) => (
+                            <button
+                                key={g}
+                                type="button"
+                                onClick={() => setNewChildInput({...newChildInput, gender: g})}
+                                className={`flex-1 py-3 rounded-xl text-sm font-bold border transition-all ${
+                                    newChildInput.gender === g
+                                        ? (g === 'M' ? 'bg-sky-50 border-sky-200 text-sky-500 dark:bg-sky-900/30 dark:border-sky-500 dark:text-sky-300' : 'bg-rose-50 border-rose-200 text-rose-500 dark:bg-rose-900/30 dark:border-rose-500 dark:text-rose-300')
+                                        : 'bg-white border-gray-100 text-gray-400 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300'
+                                }`}
+                            >
+                                {g === 'M' ? '왕자님 👑' : '공주님 🎀'}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="flex gap-2 mt-4 pb-2">
+                    <button
                         onClick={() => setIsAddingChild(false)}
                         className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 font-bold rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600"
                     >
                         취소
                     </button>
-                    <button 
+                    <button
                         onClick={handleSaveNewChild}
-                        className="flex-1 py-3 bg-amber-400 text-white font-bold rounded-xl hover:bg-amber-500 shadow-md shadow-amber-200"
+                        className="flex-1 py-3 bg-amber-500 text-white font-bold rounded-xl hover:bg-amber-600 shadow-lg shadow-amber-200 dark:shadow-none"
                     >
                         저장
                     </button>
@@ -348,28 +561,49 @@ const SettingsPage = () => {
                              <div>
                                 <span className="font-bold text-gray-700 dark:text-white block">{child.name}</span>
                                 <span className="text-xs text-gray-400 dark:text-gray-500">
-                                    {child.birthDate} 
+                                    {child.birthDate}
                                 </span>
                             </div>
                         </div>
-                        <button 
-                            onClick={() => handleDeleteChild(child.id)}
-                            className="p-2 text-gray-300 dark:text-gray-500 hover:text-red-500 transition-colors"
-                        >
-                            <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                            <button
+                                onClick={() => {
+                                    setEditChildImageFile(null);
+                                    setEditChildImagePreview(null);
+                                    setEditingChild({
+                                        id: child.id,
+                                        name: child.name,
+                                        birthDay: child.birthDay || child.birthDate || '',
+                                        birthTime: child.birthTime || '',
+                                        gender: child.gender === 'female' || child.gender === 'F' ? 'F' : 'M',
+                                        height: child.height,
+                                        weight: child.weight,
+                                        photoUrl: child.photoUrl || ''
+                                    });
+                                }}
+                                className="p-2 text-gray-300 dark:text-gray-500 hover:text-amber-500 transition-colors"
+                            >
+                                <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                                onClick={() => handleDeleteChild(child.id)}
+                                className="p-2 text-gray-300 dark:text-gray-500 hover:text-red-500 transition-colors"
+                            >
+                                <Trash2 className="w-4 h-4" />
+                            </button>
+                        </div>
                     </div>
                 ))}
-                
-                <button 
-                    onClick={() => setIsAddingChild(true)} 
+
+                <button
+                    onClick={() => setIsAddingChild(true)}
                     className="w-full py-3 border-2 border-dashed border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 rounded-xl flex items-center justify-center gap-2 hover:border-amber-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-gray-700 transition-all mt-2"
                 >
                     <Plus className="w-4 h-4" />
                     <span className="text-sm font-bold">자녀 추가하기</span>
                 </button>
-                
-                <button 
+
+                <button
                     onClick={() => setActiveModal(null)}
                     className="w-full py-3 bg-gray-800 dark:bg-gray-600 text-white font-bold rounded-xl mt-4"
                 >

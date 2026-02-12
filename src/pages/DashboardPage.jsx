@@ -257,7 +257,15 @@ const DashboardPage = () => {
                   {/* 아기 아바타 (사이즈 약간 축소) */}
                   <div className="relative">
                       <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full border-2 border-white/40 flex items-center justify-center overflow-hidden">
-                          <img src={currentChild.photo} alt="baby" className="w-full h-full object-cover" />
+                          {currentChild.photoUrl ? (
+                              <img
+                                src={currentChild.photoUrl}
+                                alt="baby"
+                                className="w-full h-full object-cover"
+                                onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = ''; }}
+                              />
+                          ) : null}
+                          <span className="text-lg font-bold text-white/80" style={currentChild.photoUrl ? { display: 'none' } : {}}>{currentChild.name?.charAt(0)}</span>
                       </div>
                       {/* 상태 뱃지 (심플하게) */}
                       <div className={`absolute -bottom-1 -right-1 px-1.5 py-0.5 ${currentStatusInfo.color} border border-white rounded-full flex items-center shadow-sm`}>
