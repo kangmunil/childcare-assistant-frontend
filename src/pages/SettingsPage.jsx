@@ -48,8 +48,8 @@ const SettingsPage = () => {
     addFamilyMember,      // 가족 추가
     removeFamilyMember,   // 가족 해제
     updateFamilyRelation, // 관계명 수정
-    approveFamilyMember,  // 초대 승인
-    rejectFamilyMember    // 초대 거절
+    approveFamilyMember,  // 공유 승인
+    rejectFamilyMember    // 공유 거절
   } = useStore();
   
   // --- 로컬 UI 상태 ---
@@ -75,7 +75,7 @@ const SettingsPage = () => {
 
   // 가족 관리 모달 상태
   const [familyMembers, setFamilyMembers] = useState({});       // { childId: [members] }
-  const [familyChildId, setFamilyChildId] = useState(null);     // 가족 추가 대상 자녀 (초대코드 입력 토글)
+  const [familyChildId, setFamilyChildId] = useState(null);     // 가족 추가 대상 자녀 (공유코드 입력 토글)
   const [familyInviteCode, setFamilyInviteCode] = useState('');
   const [editingRelation, setEditingRelation] = useState(null);  // { childId, memberId, relation }
   const [familyLoading, setFamilyLoading] = useState(false);
@@ -249,13 +249,13 @@ const SettingsPage = () => {
     }
   }, [activeModal, children, fetchFamilyMembers]);
 
-  // 초대코드 복사
+  // 공유코드 복사
   const handleCopyInviteCode = async () => {
     const code = user?.inviteCode;
     if (!code) return;
     try {
       await navigator.clipboard.writeText(code);
-      alert('초대코드가 복사되었습니다.');
+      alert('공유코드가 복사되었습니다.');
     } catch {
       // fallback
       const textarea = document.createElement('textarea');
@@ -264,14 +264,14 @@ const SettingsPage = () => {
       textarea.select();
       document.execCommand('copy');
       document.body.removeChild(textarea);
-      alert('초대코드가 복사되었습니다.');
+      alert('공유코드가 복사되었습니다.');
     }
   };
 
-  // 가족 추가 (초대코드)
+  // 가족 추가 (공유코드)
   const handleAddFamily = async (childId) => {
     if (!familyInviteCode.trim()) {
-      alert('초대코드를 입력해주세요.');
+      alert('공유코드를 입력해주세요.');
       return;
     }
     const result = await addFamilyMember(childId, familyInviteCode.trim());
@@ -325,9 +325,9 @@ const SettingsPage = () => {
     }
   };
 
-  // 초대 승인
+  // 공유 승인
   const handleApproveFamily = async (childId, memberId, memberName) => {
-    if (!window.confirm(`${memberName}님의 초대를 승인하시겠습니까?`)) return;
+    if (!window.confirm(`${memberName}님의 공유를 승인하시겠습니까?`)) return;
     const result = await approveFamilyMember(childId, memberId);
     if (result.success) {
       alert(result.message);
@@ -340,9 +340,9 @@ const SettingsPage = () => {
     }
   };
 
-  // 초대 거절
+  // 공유 거절
   const handleRejectFamily = async (childId, memberId, memberName) => {
-    if (!window.confirm(`${memberName}님의 초대를 거절하시겠습니까?`)) return;
+    if (!window.confirm(`${memberName}님의 공유를 거절하시겠습니까?`)) return;
     const result = await rejectFamilyMember(childId, memberId);
     if (result.success) {
       alert(result.message);
@@ -848,9 +848,9 @@ const SettingsPage = () => {
         title="가족 관리"
     >
         <div className="space-y-5">
-            {/* 내 초대코드 카드 */}
+            {/* 내 공유코드 카드 */}
             <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl p-4">
-                <p className="text-xs font-bold text-amber-600 dark:text-amber-400 mb-2">내 초대코드</p>
+                <p className="text-xs font-bold text-amber-600 dark:text-amber-400 mb-2">내 공유코드</p>
                 <div className="flex items-center justify-between gap-2">
                     <span className="text-lg font-black text-gray-800 dark:text-white tracking-wider">
                         {user?.inviteCode || '-'}
@@ -976,7 +976,7 @@ const SettingsPage = () => {
                             <div className="flex items-center gap-2 mt-1">
                                 <input
                                     type="text"
-                                    placeholder="초대코드 입력"
+                                    placeholder="공유코드 입력"
                                     value={familyInviteCode}
                                     onChange={(e) => setFamilyInviteCode(e.target.value)}
                                     className="flex-1 bg-gray-50 dark:bg-gray-700 dark:text-white rounded-xl px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-600 focus:outline-none focus:border-amber-400 transition-colors"

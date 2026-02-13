@@ -526,7 +526,7 @@ const useStore = create(
         }
       },
 
-      // 가족 공유 추가 - 초대코드 (POST /api/children/{childId}/family)
+      // 가족 공유 추가 - 공유코드 (POST /api/children/{childId}/family)
       addFamilyMember: async (childId, inviteCode) => {
         try {
           const response = await http.post(`/children/${childId}/family`, { inviteCode });
@@ -572,7 +572,7 @@ const useStore = create(
         }
       },
 
-      // 초대 승인 (PUT /api/children/{childId}/family/{memberId}/approve)
+      // 공유 승인 (PUT /api/children/{childId}/family/{memberId}/approve)
       approveFamilyMember: async (childId, memberId) => {
         try {
           const response = await http.put(`/children/${childId}/family/${memberId}/approve`);
@@ -587,7 +587,7 @@ const useStore = create(
         }
       },
 
-      // 초대 거절 (DELETE /api/children/{childId}/family/{memberId}/reject)
+      // 공유 거절 (DELETE /api/children/{childId}/family/{memberId}/reject)
       rejectFamilyMember: async (childId, memberId) => {
         try {
           const response = await http.delete(`/children/${childId}/family/${memberId}/reject`);

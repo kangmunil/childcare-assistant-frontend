@@ -200,12 +200,12 @@ const SignupPage = () => {
             <input
               type="text"
               name="inviteCode"
-              placeholder="초대코드 (선택)"
+              placeholder="공유코드 (선택)"
               value={formData.inviteCode}
               onChange={handleChange}
               className="w-full bg-white border border-gray-200 rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all text-sm shadow-sm"
             />
-            <p className="text-xs text-gray-400 mt-1.5 ml-2">가족에게 받은 초대코드가 있다면 입력해주세요</p>
+            <p className="text-xs text-gray-400 mt-1.5 ml-2">가족에게 받은 공유코드가 있다면 입력해주세요</p>
           </div>
           */}
 
