@@ -507,6 +507,101 @@ const useStore = create(
         }
       },
 
+      // ==========================================
+      // [4-6] 가족 관리 API 연동
+      // ==========================================
+
+      // 자녀별 가족 구성원 조회 (GET /api/children/{childId}/family)
+      fetchFamilyMembers: async (childId) => {
+        try {
+          const response = await http.get(`/children/${childId}/family`);
+          const { status, data } = response.data;
+          if (status === 'success') {
+            return { success: true, data: data || [] };
+          }
+          return { success: false, data: [] };
+        } catch (error) {
+          console.error('가족 구성원 조회 실패:', error);
+          return { success: false, data: [] };
+        }
+      },
+
+      // 가족 공유 추가 - 초대코드 (POST /api/children/{childId}/family)
+      addFamilyMember: async (childId, inviteCode) => {
+        try {
+          const response = await http.post(`/children/${childId}/family`, { inviteCode });
+          const { status, message } = response.data;
+          if (status === 'success') {
+            await get().fetchChildren();
+            return { success: true, message: '가족이 추가되었습니다.' };
+          }
+          return { success: false, message: message || '가족 추가 실패' };
+        } catch (error) {
+          const msg = error.response?.data?.message || '가족 추가 중 오류가 발생했습니다.';
+          return { success: false, message: msg };
+        }
+      },
+
+      // 가족 공유 해제 (DELETE /api/children/{childId}/family/{memberId})
+      removeFamilyMember: async (childId, memberId) => {
+        try {
+          const response = await http.delete(`/children/${childId}/family/${memberId}`);
+          const { status, message } = response.data;
+          if (status === 'success') {
+            return { success: true, message: '가족이 해제되었습니다.' };
+          }
+          return { success: false, message: message || '가족 해제 실패' };
+        } catch (error) {
+          const msg = error.response?.data?.message || '가족 해제 중 오류가 발생했습니다.';
+          return { success: false, message: msg };
+        }
+      },
+
+      // 관계명 수정 (PUT /api/children/{childId}/family/{memberId}/relation)
+      updateFamilyRelation: async (childId, memberId, relation) => {
+        try {
+          const response = await http.put(`/children/${childId}/family/${memberId}/relation`, { relation });
+          const { status, message } = response.data;
+          if (status === 'success') {
+            return { success: true, message: '관계가 수정되었습니다.' };
+          }
+          return { success: false, message: message || '관계 수정 실패' };
+        } catch (error) {
+          const msg = error.response?.data?.message || '관계 수정 중 오류가 발생했습니다.';
+          return { success: false, message: msg };
+        }
+      },
+
+      // 초대 승인 (PUT /api/children/{childId}/family/{memberId}/approve)
+      approveFamilyMember: async (childId, memberId) => {
+        try {
+          const response = await http.put(`/children/${childId}/family/${memberId}/approve`);
+          const { status, message } = response.data;
+          if (status === 'success') {
+            return { success: true, message: '승인되었습니다.' };
+          }
+          return { success: false, message: message || '승인 실패' };
+        } catch (error) {
+          const msg = error.response?.data?.message || '승인 중 오류가 발생했습니다.';
+          return { success: false, message: msg };
+        }
+      },
+
+      // 초대 거절 (DELETE /api/children/{childId}/family/{memberId}/reject)
+      rejectFamilyMember: async (childId, memberId) => {
+        try {
+          const response = await http.delete(`/children/${childId}/family/${memberId}/reject`);
+          const { status, message } = response.data;
+          if (status === 'success') {
+            return { success: true, message: '거절되었습니다.' };
+          }
+          return { success: false, message: message || '거절 실패' };
+        } catch (error) {
+          const msg = error.response?.data?.message || '거절 중 오류가 발생했습니다.';
+          return { success: false, message: msg };
+        }
+      },
+
       // 소셜 로그인 (테스트 모드 포함)
       socialLogin: async (provider) => {
         // [옵션 A] 진짜 Supabase 코드 (키 받으면 주석 풀고 사용!)

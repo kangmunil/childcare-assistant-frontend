@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, User, Shield, HelpCircle, LogOut, ChevronRight, Moon, Volume2, X, Plus, Trash2, AlertTriangle, Pencil, Camera } from 'lucide-react';
+import { Bell, User, Shield, HelpCircle, LogOut, ChevronRight, Moon, Volume2, X, Plus, Trash2, AlertTriangle, Pencil, Camera, Users, Copy, UserMinus } from 'lucide-react';
 import useStore from '../store/useStore';
 
 // [1] 재사용 가능한 공통 모달 컴포넌트
@@ -13,7 +13,7 @@ const CommonModal = ({ isOpen, onClose, title, children }) => {
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       
       {/* 모달 본문 */}
-      <div className="relative bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-fade-in-up transition-colors duration-300">
+      <div className="relative bg-white dark:bg-gray-800 w-full max-w-md rounded-3xl p-6 shadow-2xl animate-fade-in-up transition-colors duration-300">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-xl font-bold text-gray-800 dark:text-white">{title}</h3>
           <button onClick={onClose} className="p-2 bg-gray-100 dark:bg-gray-700 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
@@ -43,7 +43,13 @@ const SettingsPage = () => {
     addChild,       // 자녀 등록 API
     deleteChild,    // 자녀 삭제 API
     updateChild,    // 자녀 수정 API
-    uploadChildImage // 자녀 이미지 업로드 API
+    uploadChildImage, // 자녀 이미지 업로드 API
+    fetchFamilyMembers,   // 가족 구성원 조회
+    addFamilyMember,      // 가족 추가
+    removeFamilyMember,   // 가족 해제
+    updateFamilyRelation, // 관계명 수정
+    approveFamilyMember,  // 초대 승인
+    rejectFamilyMember    // 초대 거절
   } = useStore();
   
   // --- 로컬 UI 상태 ---
@@ -66,6 +72,13 @@ const SettingsPage = () => {
 
   // 자녀 수정 모드 상태
   const [editingChild, setEditingChild] = useState(null);
+
+  // 가족 관리 모달 상태
+  const [familyMembers, setFamilyMembers] = useState({});       // { childId: [members] }
+  const [familyChildId, setFamilyChildId] = useState(null);     // 가족 추가 대상 자녀 (초대코드 입력 토글)
+  const [familyInviteCode, setFamilyInviteCode] = useState('');
+  const [editingRelation, setEditingRelation] = useState(null);  // { childId, memberId, relation }
+  const [familyLoading, setFamilyLoading] = useState(false);
 
   // 이미지 관련 상태
   const [newChildImageFile, setNewChildImageFile] = useState(null);
@@ -217,6 +230,131 @@ const SettingsPage = () => {
     }
   };
 
+  // 가족 관리 모달 열릴 때 내 아이마다 가족 구성원 조회
+  useEffect(() => {
+    if (activeModal === 'family') {
+      const loadFamilyMembers = async () => {
+        setFamilyLoading(true);
+        const results = {};
+        for (const child of children) {
+          const res = await fetchFamilyMembers(child.id);
+          if (res.success) {
+            results[child.id] = res.data;
+          }
+        }
+        setFamilyMembers(results);
+        setFamilyLoading(false);
+      };
+      loadFamilyMembers();
+    }
+  }, [activeModal, children, fetchFamilyMembers]);
+
+  // 초대코드 복사
+  const handleCopyInviteCode = async () => {
+    const code = user?.inviteCode;
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      alert('초대코드가 복사되었습니다.');
+    } catch {
+      // fallback
+      const textarea = document.createElement('textarea');
+      textarea.value = code;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      alert('초대코드가 복사되었습니다.');
+    }
+  };
+
+  // 가족 추가 (초대코드)
+  const handleAddFamily = async (childId) => {
+    if (!familyInviteCode.trim()) {
+      alert('초대코드를 입력해주세요.');
+      return;
+    }
+    const result = await addFamilyMember(childId, familyInviteCode.trim());
+    if (result.success) {
+      alert(result.message);
+      setFamilyInviteCode('');
+      setFamilyChildId(null);
+      // 가족 목록 갱신
+      const res = await fetchFamilyMembers(childId);
+      if (res.success) {
+        setFamilyMembers(prev => ({ ...prev, [childId]: res.data }));
+      }
+    } else {
+      alert(result.message);
+    }
+  };
+
+  // 가족 삭제
+  const handleRemoveFamily = async (childId, memberId, memberName) => {
+    if (!window.confirm(`${memberName}님을 가족에서 해제하시겠습니까?`)) return;
+    const result = await removeFamilyMember(childId, memberId);
+    if (result.success) {
+      alert(result.message);
+      const res = await fetchFamilyMembers(childId);
+      if (res.success) {
+        setFamilyMembers(prev => ({ ...prev, [childId]: res.data }));
+      }
+    } else {
+      alert(result.message);
+    }
+  };
+
+  // 관계명 수정 저장
+  const handleSaveRelation = async () => {
+    if (!editingRelation) return;
+    const { childId, memberId, relation } = editingRelation;
+    if (!relation.trim()) {
+      alert('관계를 입력해주세요.');
+      return;
+    }
+    const result = await updateFamilyRelation(childId, memberId, relation.trim());
+    if (result.success) {
+      alert(result.message);
+      setEditingRelation(null);
+      const res = await fetchFamilyMembers(childId);
+      if (res.success) {
+        setFamilyMembers(prev => ({ ...prev, [childId]: res.data }));
+      }
+    } else {
+      alert(result.message);
+    }
+  };
+
+  // 초대 승인
+  const handleApproveFamily = async (childId, memberId, memberName) => {
+    if (!window.confirm(`${memberName}님의 초대를 승인하시겠습니까?`)) return;
+    const result = await approveFamilyMember(childId, memberId);
+    if (result.success) {
+      alert(result.message);
+      const res = await fetchFamilyMembers(childId);
+      if (res.success) {
+        setFamilyMembers(prev => ({ ...prev, [childId]: res.data }));
+      }
+    } else {
+      alert(result.message);
+    }
+  };
+
+  // 초대 거절
+  const handleRejectFamily = async (childId, memberId, memberName) => {
+    if (!window.confirm(`${memberName}님의 초대를 거절하시겠습니까?`)) return;
+    const result = await rejectFamilyMember(childId, memberId);
+    if (result.success) {
+      alert(result.message);
+      const res = await fetchFamilyMembers(childId);
+      if (res.success) {
+        setFamilyMembers(prev => ({ ...prev, [childId]: res.data }));
+      }
+    } else {
+      alert(result.message);
+    }
+  };
+
   // --- 서브 컴포넌트 (UI) ---
   const Section = ({ title, children }) => (
     <div className="mb-6">
@@ -271,11 +409,16 @@ const SettingsPage = () => {
             label="내 정보 수정" 
             onClick={() => setActiveModal('profile')} 
         />
-        <MenuItem 
-            icon={Shield} 
-            label="자녀 관리" 
-            value={`${children.length}명`} 
-            onClick={() => setActiveModal('children')} 
+        <MenuItem
+            icon={Shield}
+            label="자녀 관리"
+            value={`${children.length}명`}
+            onClick={() => setActiveModal('children')}
+        />
+        <MenuItem
+            icon={Users}
+            label="가족 관리"
+            onClick={() => setActiveModal('family')}
         />
       </Section>
 
@@ -544,7 +687,7 @@ const SettingsPage = () => {
                 </div>
             </div>
         ) : (
-            /* [A] 목록 모드 */
+            /* [A] 목록 모드 — 그룹핑 */
             <div className="space-y-3">
                 {children.length === 0 && (
                     <div className="text-center py-8 text-gray-400 text-sm">
@@ -552,56 +695,136 @@ const SettingsPage = () => {
                     </div>
                 )}
 
-                {children.map((child) => (
-                    <div key={child.id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-3 rounded-xl border border-gray-100 dark:border-gray-600">
-                        <div className="flex items-center gap-3">
-                             <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-300 flex items-center justify-center font-bold text-xs">
-                                {child.name.charAt(0)}
-                             </div>
-                             <div>
-                                <span className="font-bold text-gray-700 dark:text-white block">{child.name}</span>
-                                <span className="text-xs text-gray-400 dark:text-gray-500">
-                                    {child.birthDate}
-                                </span>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-1">
-                            <button
-                                onClick={() => {
-                                    setEditChildImageFile(null);
-                                    setEditChildImagePreview(null);
-                                    setEditingChild({
-                                        id: child.id,
-                                        name: child.name,
-                                        birthDay: child.birthDay || child.birthDate || '',
-                                        birthTime: child.birthTime || '',
-                                        gender: child.gender === 'female' || child.gender === 'F' ? 'F' : 'M',
-                                        height: child.height,
-                                        weight: child.weight,
-                                        photoUrl: child.photoUrl || ''
-                                    });
-                                }}
-                                className="p-2 text-gray-300 dark:text-gray-500 hover:text-amber-500 transition-colors"
-                            >
-                                <Pencil className="w-4 h-4" />
-                            </button>
-                            <button
-                                onClick={() => handleDeleteChild(child.id)}
-                                className="p-2 text-gray-300 dark:text-gray-500 hover:text-red-500 transition-colors"
-                            >
-                                <Trash2 className="w-4 h-4" />
-                            </button>
-                        </div>
-                    </div>
-                ))}
+                {/* 내 아이 그룹 */}
+                {(() => {
+                    const myChildren = children.filter(c => c.isOwner);
+                    const sharedGroups = Object.entries(
+                        children.filter(c => !c.isOwner)
+                            .reduce((acc, c) => {
+                                const key = c.ownerName || '알 수 없음';
+                                (acc[key] = acc[key] || []).push(c);
+                                return acc;
+                            }, {})
+                    );
 
-                <button
-                    onClick={() => setIsAddingChild(true)}
-                    className="w-full py-3 border-2 border-dashed border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 rounded-xl flex items-center justify-center gap-2 hover:border-amber-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-gray-700 transition-all mt-2"
-                >
-                    <Plus className="w-4 h-4" />
-                    <span className="text-sm font-bold">자녀 추가하기</span>
-                </button>
+                    return (
+                        <>
+                            {myChildren.length > 0 && (
+                                <div>
+                                    <p className="text-xs font-bold text-gray-400 dark:text-gray-500 mb-2 ml-1">내 아이</p>
+                                    <div className="space-y-2">
+                                        {myChildren.map((child) => (
+                                            <div key={child.id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-3 rounded-xl border border-gray-100 dark:border-gray-600">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-300 flex items-center justify-center font-bold text-xs">
+                                                        {child.name.charAt(0)}
+                                                    </div>
+                                                    <div>
+                                                        <span className="font-bold text-gray-700 dark:text-white block">{child.name}</span>
+                                                        <span className="text-xs text-gray-400 dark:text-gray-500">{child.birthDate}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditChildImageFile(null);
+                                                            setEditChildImagePreview(null);
+                                                            setEditingChild({
+                                                                id: child.id,
+                                                                name: child.name,
+                                                                birthDay: child.birthDay || child.birthDate || '',
+                                                                birthTime: child.birthTime || '',
+                                                                gender: child.gender === 'female' || child.gender === 'F' ? 'F' : 'M',
+                                                                height: child.height,
+                                                                weight: child.weight,
+                                                                photoUrl: child.photoUrl || ''
+                                                            });
+                                                        }}
+                                                        className="p-2 text-gray-300 dark:text-gray-500 hover:text-amber-500 transition-colors"
+                                                    >
+                                                        <Pencil className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteChild(child.id)}
+                                                        className="p-2 text-gray-300 dark:text-gray-500 hover:text-red-500 transition-colors"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <button
+                                        onClick={() => setIsAddingChild(true)}
+                                        className="w-full py-3 border-2 border-dashed border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 rounded-xl flex items-center justify-center gap-2 hover:border-amber-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-gray-700 transition-all mt-2"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                        <span className="text-sm font-bold">자녀 추가하기</span>
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* 내 아이가 없을 때도 추가 버튼 표시 */}
+                            {myChildren.length === 0 && children.length > 0 && (
+                                <div>
+                                    <p className="text-xs font-bold text-gray-400 dark:text-gray-500 mb-2 ml-1">내 아이</p>
+                                    <button
+                                        onClick={() => setIsAddingChild(true)}
+                                        className="w-full py-3 border-2 border-dashed border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 rounded-xl flex items-center justify-center gap-2 hover:border-amber-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-gray-700 transition-all"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                        <span className="text-sm font-bold">자녀 추가하기</span>
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* 공유받은 아이 그룹 */}
+                            {sharedGroups.map(([ownerName, sharedChildren]) => (
+                                <div key={ownerName}>
+                                    <p className="text-xs font-bold text-gray-400 dark:text-gray-500 mb-2 ml-1">{ownerName}님의 아이</p>
+                                    <div className="space-y-2">
+                                        {sharedChildren.map((child) => (
+                                            <div key={child.id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-3 rounded-xl border border-gray-100 dark:border-gray-600">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 flex items-center justify-center font-bold text-xs">
+                                                        {child.name.charAt(0)}
+                                                    </div>
+                                                    <div>
+                                                        <span className="font-bold text-gray-700 dark:text-white block">{child.name}</span>
+                                                        <span className="text-xs text-gray-400 dark:text-gray-500">{child.birthDate}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    {/* 공유받은 아이: 수정만 가능, 삭제 불가 */}
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditChildImageFile(null);
+                                                            setEditChildImagePreview(null);
+                                                            setEditingChild({
+                                                                id: child.id,
+                                                                name: child.name,
+                                                                birthDay: child.birthDay || child.birthDate || '',
+                                                                birthTime: child.birthTime || '',
+                                                                gender: child.gender === 'female' || child.gender === 'F' ? 'F' : 'M',
+                                                                height: child.height,
+                                                                weight: child.weight,
+                                                                photoUrl: child.photoUrl || ''
+                                                            });
+                                                        }}
+                                                        className="p-2 text-gray-300 dark:text-gray-500 hover:text-amber-500 transition-colors"
+                                                    >
+                                                        <Pencil className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </>
+                    );
+                })()}
 
                 <button
                     onClick={() => setActiveModal(null)}
@@ -611,6 +834,235 @@ const SettingsPage = () => {
                 </button>
             </div>
         )}
+    </CommonModal>
+
+    {/* 3. 가족 관리 모달 */}
+    <CommonModal
+        isOpen={activeModal === 'family'}
+        onClose={() => {
+            setActiveModal(null);
+            setFamilyChildId(null);
+            setFamilyInviteCode('');
+            setEditingRelation(null);
+        }}
+        title="가족 관리"
+    >
+        <div className="space-y-5">
+            {/* 내 초대코드 카드 */}
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl p-4">
+                <p className="text-xs font-bold text-amber-600 dark:text-amber-400 mb-2">내 초대코드</p>
+                <div className="flex items-center justify-between gap-2">
+                    <span className="text-lg font-black text-gray-800 dark:text-white tracking-wider">
+                        {user?.inviteCode || '-'}
+                    </span>
+                    {user?.inviteCode && (
+                        <button
+                            onClick={handleCopyInviteCode}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-400 text-white text-xs font-bold rounded-lg hover:bg-amber-500 transition-colors"
+                        >
+                            <Copy className="w-3.5 h-3.5" />
+                            복사
+                        </button>
+                    )}
+                </div>
+                <p className="text-[11px] text-amber-500 dark:text-amber-400/70 mt-2">
+                    이 코드를 가족에게 공유하면 내 아이를 함께 관리할 수 있어요
+                </p>
+            </div>
+
+            {/* 내 아이별 가족 구성원 */}
+            {familyLoading ? (
+                <div className="text-center py-6 text-gray-400 text-sm">불러오는 중...</div>
+            ) : (
+                children.filter(c => c.isOwner !== false).map((child) => (
+                    <div key={child.id} className="space-y-2">
+                        <h4 className="text-sm font-black text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-300 flex items-center justify-center text-[10px] font-bold">
+                                {child.name.charAt(0)}
+                            </span>
+                            {child.name}의 가족
+                        </h4>
+
+                        <div className="space-y-1.5">
+                            {(familyMembers[child.id] || []).filter(m => !m.isMe).length === 0 && (
+                                <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-3">아직 추가된 가족이 없습니다</p>
+                            )}
+                            {(familyMembers[child.id] || []).filter(m => !m.isMe).map((member) => (
+                                <div key={member.memberId} className={`p-3 rounded-xl border ${!member.isApproved ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-700' : 'bg-gray-50 dark:bg-gray-700 border-gray-100 dark:border-gray-600'}`}>
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                            <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center text-xs font-bold text-gray-500 dark:text-gray-300 shrink-0">
+                                                {member.memberName?.charAt(0) || '?'}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <span className="font-bold text-sm text-gray-700 dark:text-white truncate block">
+                                                    {member.memberName}
+                                                </span>
+                                                {!member.isApproved && (
+                                                    <span className="text-[11px] text-amber-500 font-bold">승인 대기중</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        {!member.isApproved ? (
+                                            child.isOwner ? (
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    <button
+                                                        onClick={() => handleApproveFamily(child.id, member.memberId, member.memberName)}
+                                                        className="px-3 py-1.5 bg-amber-400 text-white text-xs font-bold rounded-lg hover:bg-amber-500 transition-colors"
+                                                    >
+                                                        승인
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleRejectFamily(child.id, member.memberId, member.memberName)}
+                                                        className="px-3 py-1.5 bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-300 text-xs font-bold rounded-lg hover:bg-red-100 hover:text-red-500 dark:hover:bg-red-900/30 dark:hover:text-red-400 transition-colors"
+                                                    >
+                                                        거절
+                                                    </button>
+                                                </div>
+                                            ) : null
+                                        ) : (
+                                            <button
+                                                onClick={() => handleRemoveFamily(child.id, member.memberId, member.memberName)}
+                                                className="p-1.5 text-gray-300 dark:text-gray-500 hover:text-red-500 transition-colors shrink-0"
+                                            >
+                                                <UserMinus className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                    </div>
+                                    {/* 승인된 멤버만 관계명 수정 가능 */}
+                                    {member.isApproved && (
+                                        <>
+                                            {editingRelation && editingRelation.childId === child.id && editingRelation.memberId === member.memberId ? (
+                                                <div className="flex items-center gap-2 mt-2">
+                                                    <input
+                                                        type="text"
+                                                        value={editingRelation.relation}
+                                                        placeholder="아이와의 관계를 입력해주세요."
+                                                        onChange={(e) => setEditingRelation({ ...editingRelation, relation: e.target.value })}
+                                                        className="flex-1 bg-white dark:bg-gray-600 dark:text-white text-sm border border-amber-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                                                        autoFocus
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') handleSaveRelation();
+                                                            if (e.key === 'Escape') setEditingRelation(null);
+                                                        }}
+                                                    />
+                                                    <button onClick={handleSaveRelation} className="text-sm text-amber-500 font-bold px-2 py-2 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors">저장</button>
+                                                    <button onClick={() => setEditingRelation(null)} className="text-sm text-gray-400 font-bold px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg transition-colors">취소</button>
+                                                </div>
+                                            ) : (
+                                                <div
+                                                    className="mt-2 cursor-pointer group"
+                                                    onClick={() => setEditingRelation({ childId: child.id, memberId: member.memberId, relation: member.relation || '' })}
+                                                >
+                                                    {member.relation ? (
+                                                        <span className="text-sm text-gray-500 dark:text-gray-400 group-hover:text-amber-500 transition-colors flex items-center gap-1">
+                                                            {member.relation} <Pencil className="w-3 h-3" />
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-sm text-gray-300 dark:text-gray-500 group-hover:text-amber-500 transition-colors flex items-center gap-1">
+                                                            아이와의 관계를 입력해주세요. <Pencil className="w-3 h-3" />
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* 가족 추가 토글 */}
+                        {familyChildId === child.id ? (
+                            <div className="flex items-center gap-2 mt-1">
+                                <input
+                                    type="text"
+                                    placeholder="초대코드 입력"
+                                    value={familyInviteCode}
+                                    onChange={(e) => setFamilyInviteCode(e.target.value)}
+                                    className="flex-1 bg-gray-50 dark:bg-gray-700 dark:text-white rounded-xl px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-600 focus:outline-none focus:border-amber-400 transition-colors"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleAddFamily(child.id);
+                                        if (e.key === 'Escape') { setFamilyChildId(null); setFamilyInviteCode(''); }
+                                    }}
+                                />
+                                <button
+                                    onClick={() => handleAddFamily(child.id)}
+                                    className="px-4 py-2.5 bg-amber-500 text-white text-sm font-bold rounded-xl hover:bg-amber-600 transition-colors shrink-0"
+                                >
+                                    추가
+                                </button>
+                                <button
+                                    onClick={() => { setFamilyChildId(null); setFamilyInviteCode(''); }}
+                                    className="px-3 py-2.5 bg-gray-100 dark:bg-gray-600 text-gray-500 dark:text-gray-300 text-sm font-bold rounded-xl hover:bg-gray-200 dark:hover:bg-gray-500 transition-colors shrink-0"
+                                >
+                                    취소
+                                </button>
+                            </div>
+                        ) : (
+                            <button
+                                onClick={() => { setFamilyChildId(child.id); setFamilyInviteCode(''); }}
+                                className="w-full py-2.5 border-2 border-dashed border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 rounded-xl flex items-center justify-center gap-2 hover:border-amber-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-gray-700 transition-all text-sm"
+                            >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span className="font-bold">가족 추가</span>
+                            </button>
+                        )}
+                    </div>
+                ))
+            )}
+
+            {children.filter(c => c.isOwner !== false).length === 0 && !familyLoading && (
+                <div className="text-center py-6 text-gray-400 text-sm">
+                    등록된 내 아이가 없습니다.<br/>자녀를 먼저 등록해주세요.
+                </div>
+            )}
+
+            {/* 공유받은 아이별 가족 구성원 (읽기 전용) */}
+            {!familyLoading && children.filter(c => c.isOwner === false).length > 0 && (
+                <div className="space-y-4 pt-2 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-xs font-bold text-gray-400 dark:text-gray-500 mt-3">공유받은 아이</p>
+                    {children.filter(c => c.isOwner === false).map((child) => (
+                        <div key={child.id} className="space-y-2">
+                            <h4 className="text-sm font-black text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                                <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 flex items-center justify-center text-[10px] font-bold">
+                                    {child.name.charAt(0)}
+                                </span>
+                                {child.name}
+                                <span className="text-[10px] bg-gray-100 dark:bg-gray-600 text-gray-400 dark:text-gray-400 px-2 py-0.5 rounded-full font-bold">{child.ownerName}님</span>
+                            </h4>
+                            {/*
+                            <div className="space-y-1.5">
+                                {(familyMembers[child.id] || []).filter(m => !m.isMe).length === 0 && (
+                                    <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-3">가족 구성원이 없습니다</p>
+                                )}
+                                {(familyMembers[child.id] || []).filter(m => !m.isMe).map((member) => (
+                                    <div key={member.memberId} className="bg-gray-50 dark:bg-gray-700 p-3 rounded-xl border border-gray-100 dark:border-gray-600">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center text-xs font-bold text-gray-500 dark:text-gray-300 shrink-0">
+                                                {member.memberName?.charAt(0) || '?'}
+                                            </div>
+                                            <div>
+                                                <span className="font-bold text-sm text-gray-700 dark:text-white block">{member.memberName}</span>
+                                                <span className="text-sm text-gray-400 dark:text-gray-500">{member.relation || ''}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            */}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            <button
+                onClick={() => setActiveModal(null)}
+                className="w-full py-3 bg-gray-800 dark:bg-gray-600 text-white font-bold rounded-xl mt-2"
+            >
+                닫기
+            </button>
+        </div>
     </CommonModal>
     </>
   );
