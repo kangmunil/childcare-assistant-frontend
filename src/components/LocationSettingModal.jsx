@@ -31,7 +31,7 @@ const LocationSettingModal = ({ isOpen, onClose, onSave, currentRegionName }) =>
                 try {
                     // Backend Proxy를 통해 Kakao API 호출
                     const response = await api.get(`/geo/reverse?lat=${latitude}&lng=${longitude}`);
-                    const data = response.data;
+                    const data = response?.data || response;
 
                     if (data.documents && data.documents.length > 0) {
                         const doc = data.documents[0];
@@ -62,7 +62,7 @@ const LocationSettingModal = ({ isOpen, onClose, onSave, currentRegionName }) =>
                     }
                 } catch (error) {
                     console.error('Reverse geocoding failed:', error);
-                    setErrorMessage(error.response?.data?.error || '주소 변환에 실패했습니다.');
+                    setErrorMessage(error?.message || '주소 변환에 실패했습니다.');
                     setStatus('error');
                 }
             },
