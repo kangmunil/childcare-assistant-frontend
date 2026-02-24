@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams, useNavigationType } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Search, PenLine, MessageSquare, Heart, User } from 'lucide-react';
+import { Search, PenLine, MessageSquare, Heart, User, MapPin } from 'lucide-react';
 import api from '../lib/api';
 import { getLocalLikeMap, setLocalLike } from '../lib/likeStorage';
+import useStore from '../store/useStore';
+import LocationSettingModal from '../components/LocationSettingModal';
 
 const CommunityPage = () => {
   const navigate = useNavigate();
@@ -31,6 +33,8 @@ const CommunityPage = () => {
   const navigationType = useNavigationType();
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const debounceTimerRef = useRef(null);
+  const [locationModalOpen, setLocationModalOpen] = useState(false);
+  const { user, updateUserInfo } = useStore();
 
   const queryKey = ['community', activeTab, debouncedQuery, pageParam, sizeParam];
 
@@ -261,14 +265,26 @@ const CommunityPage = () => {
   return (
     <div ref={containerRef} className="min-h-screen pb-24 md:pb-0 relative">
       {/* 1. 헤더 & 검색 */}
-      <div className={`sticky top-0 z-20 py-4 border-b transition-all duration-200 ${
-        isHeaderVisible
+      <div className={`sticky top-0 z-20 py-4 border-b transition-all duration-200 ${isHeaderVisible
           ? 'translate-y-0 opacity-100 bg-[#F9F8F6]/95 dark:bg-gray-900/95 border-stone-200 dark:border-gray-800 shadow-sm backdrop-blur-sm'
           : '-translate-y-full opacity-0 bg-[#F9F8F6]/95 dark:bg-gray-900/95 border-transparent shadow-none backdrop-blur-sm'
-      }`}>
+        }`}>
         <div className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-end mb-4">
-          <h1 className="text-3xl sm:text-[32px] lg:text-4xl font-serif-kr font-bold text-stone-900 dark:text-white">Community</h1>
-          <p className="text-xs sm:text-sm text-stone-400 dark:text-gray-400 font-medium">육아 동지들과 함께해요</p>
+          <div>
+            <h1 className="text-3xl sm:text-[32px] lg:text-4xl font-serif-kr font-bold text-stone-900 dark:text-white">Community</h1>
+            <p className="text-xs sm:text-sm text-stone-400 dark:text-gray-400 font-medium">육아 동지들과 함께해요</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLocationModalOpen(true)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${user?.regionName
+              ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/60'
+              : 'bg-stone-100 text-stone-500 dark:bg-gray-700 dark:text-gray-300 hover:bg-stone-200 dark:hover:bg-gray-600'
+              }`}
+          >
+            <MapPin className="w-3.5 h-3.5" />
+            {user?.regionName || '내 동네 설정'}
+          </button>
         </div>
 
         <div className="relative w-full">
@@ -294,25 +310,24 @@ const CommunityPage = () => {
           />
         </div>
 
-              <div className="flex gap-2 mt-4 overflow-x-auto no-scrollbar">
-                {['all', 'qna', 'daily', 'tip'].map(tab => (
-                  <button
-                    key={tab}
-                    onClick={() => {
-                      const nextParams = new URLSearchParams(searchParams);
-                      if (tab === 'all') {
-                        nextParams.delete('tab');
-                      } else {
-                        nextParams.set('tab', tab);
-                      }
-                      nextParams.delete('page');
-                      setSearchParams(nextParams, { replace: true });
-                    }}
-                    className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${
-                      activeTab === tab
-                        ? 'bg-stone-800 text-white dark:bg-amber-500 dark:text-gray-900'
+        <div className="flex gap-2 mt-4 overflow-x-auto no-scrollbar">
+          {['all', 'qna', 'daily', 'tip'].map(tab => (
+            <button
+              key={tab}
+              onClick={() => {
+                const nextParams = new URLSearchParams(searchParams);
+                if (tab === 'all') {
+                  nextParams.delete('tab');
+                } else {
+                  nextParams.set('tab', tab);
+                }
+                nextParams.delete('page');
+                setSearchParams(nextParams, { replace: true });
+              }}
+              className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${activeTab === tab
+                  ? 'bg-stone-800 text-white dark:bg-amber-500 dark:text-gray-900'
                   : 'bg-white border border-stone-200 text-stone-500 hover:bg-stone-100 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700'
-              }`}
+                }`}
             >
               {tab === 'all' ? '전체' : tab === 'qna' ? '질문&답변' : tab === 'daily' ? '육아일상' : '꿀팁공유'}
             </button>
@@ -354,10 +369,9 @@ const CommunityPage = () => {
                     </div>
                   </div>
                   {post.category && (
-                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${
-                      post.category === 'qna' ? 'bg-rose-50 text-rose-500 dark:bg-rose-900/30 dark:text-rose-300' :
-                      post.category === 'daily' ? 'bg-emerald-50 text-emerald-500 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-indigo-50 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-300'
-                    }`}>
+                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${post.category === 'qna' ? 'bg-rose-50 text-rose-500 dark:bg-rose-900/30 dark:text-rose-300' :
+                        post.category === 'daily' ? 'bg-emerald-50 text-emerald-500 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-indigo-50 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-300'
+                      }`}>
                       {categoryLabels[post.category] || post.category}
                     </span>
                   )}
@@ -376,9 +390,8 @@ const CommunityPage = () => {
                   <button
                     type="button"
                     onClick={(event) => handleToggleLike(event, post.id)}
-                    className={`flex items-center gap-1 text-xs font-medium transition-colors ${
-                      likedMap[post.id] ? 'text-rose-500' : 'text-stone-400 dark:text-gray-400'
-                    }`}
+                    className={`flex items-center gap-1 text-xs font-medium transition-colors ${likedMap[post.id] ? 'text-rose-500' : 'text-stone-400 dark:text-gray-400'
+                      }`}
                   >
                     <Heart className={`w-4 h-4 ${likedMap[post.id] ? 'fill-rose-500' : ''}`} />
                     {likeCounts[post.id] ?? post.likeCount ?? 0}
@@ -470,6 +483,16 @@ const CommunityPage = () => {
       >
         <PenLine className="w-6 h-6" />
       </button>
+
+      {/* 동네 설정 모달 */}
+      <LocationSettingModal
+        isOpen={locationModalOpen}
+        onClose={() => setLocationModalOpen(false)}
+        onSave={async (locationData) => {
+          await updateUserInfo(locationData);
+        }}
+        currentRegionName={user?.regionName}
+      />
     </div>
   );
 };
