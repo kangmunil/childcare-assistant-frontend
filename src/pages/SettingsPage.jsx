@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, User, Shield, HelpCircle, LogOut, ChevronRight, Moon, Volume2, X, Plus, Trash2, AlertTriangle, Pencil, Camera, Users, Copy, UserMinus } from 'lucide-react';
+import { Bell, User, Shield, HelpCircle, LogOut, ChevronRight, Moon, Volume2, X, Plus, Trash2, AlertTriangle, Pencil, Camera, Users, Copy, UserMinus, Star } from 'lucide-react';
 import useStore from '../store/useStore';
 
 // [1] 재사용 가능한 공통 모달 컴포넌트
@@ -49,11 +49,13 @@ const SettingsPage = () => {
     removeFamilyMember,   // 가족 해제
     updateFamilyRelation, // 관계명 수정
     approveFamilyMember,  // 공유 승인
-    rejectFamilyMember    // 공유 거절
+    rejectFamilyMember,   // 공유 거절
+    setPrimaryChild       // 대표 자녀 설정
   } = useStore();
-  
+
   // --- 로컬 UI 상태 ---
-  const [notifications, setNotifications] = useState(true); 
+  const [notifications, setNotifications] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState(true); 
   const [activeModal, setActiveModal] = useState(null); 
   
   // 프로필 수정용 상태
@@ -437,11 +439,12 @@ const SettingsPage = () => {
             toggleState={isDarkMode}    
             onToggle={toggleDarkMode}   
         />
-         <MenuItem 
-            icon={Volume2} 
-            label="효과음" 
-            value="켜짐"
-            onClick={() => {}} 
+         <MenuItem
+            icon={Volume2}
+            label="효과음"
+            isToggle
+            toggleState={soundEnabled}
+            onToggle={() => setSoundEnabled(!soundEnabled)}
         />
       </Section>
 
@@ -725,6 +728,17 @@ const SettingsPage = () => {
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-1">
+                                                    <button
+                                                        onClick={async () => {
+                                                            if (!child.isPrimary) {
+                                                                await setPrimaryChild(child.id);
+                                                            }
+                                                        }}
+                                                        className={`p-2 transition-colors ${child.isPrimary ? 'text-amber-500' : 'text-gray-300 dark:text-gray-500 hover:text-amber-500'}`}
+                                                        title={child.isPrimary ? '대표 자녀' : '대표 자녀로 설정'}
+                                                    >
+                                                        <Star className={`w-4 h-4 ${child.isPrimary ? 'fill-amber-500' : ''}`} />
+                                                    </button>
                                                     <button
                                                         onClick={() => {
                                                             setEditChildImageFile(null);

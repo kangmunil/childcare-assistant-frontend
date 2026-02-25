@@ -421,14 +421,28 @@ const useStore = create(
             set({
               children: childList,
               childrenLoaded: true,
-              // 활성화된 자녀가 없거나 삭제된 경우 첫 번째 자녀 선택
-              activeChildId: childList.length > 0 ? childList[0].id : null
+              // 대표 자녀(isPrimary)가 있으면 우선 선택, 없으면 첫 번째 자녀
+              activeChildId: childList.find(c => c.isPrimary === true)?.id || childList[0]?.id || null
             });
             console.log("✅ 자녀 목록 갱신:", childList.length, "명");
           }
         } catch (error) {
           set({ childrenLoaded: true });
           console.error("❌ 자녀 목록 조회 실패:", error);
+        }
+      },
+
+      // 4-1-1. 대표 자녀 설정 (PATCH /api/children/{childId}/primary)
+      setPrimaryChild: async (childId) => {
+        try {
+          const response = await http.patch(`/children/${childId}/primary`);
+          if (response.data.status === 'success') {
+            await get().fetchChildren();
+            return { success: true };
+          }
+          return { success: false, message: response.data.message || '대표 자녀 설정 실패' };
+        } catch (error) {
+          return { success: false, message: error.response?.data?.message || '대표 자녀 설정 중 오류가 발생했습니다.' };
         }
       },
 

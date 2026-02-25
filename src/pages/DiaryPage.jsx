@@ -230,7 +230,7 @@ const DiaryPage = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsStatsOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 rounded-xl font-medium text-sm hover:bg-indigo-200 dark:hover:bg-indigo-900 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl font-medium text-sm hover:bg-indigo-700 transition-colors"
           >
             <BarChart3 className="w-4 h-4" />
             통계
@@ -300,7 +300,7 @@ const DiaryPage = () => {
                 <button
                   onClick={handleSaveMemo}
                   disabled={savingMemo || !memoContent.trim()}
-                  className="px-4 py-1.5 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors disabled:bg-gray-300 dark:disabled:bg-gray-600 flex items-center gap-1"
+                  className="px-4 py-1.5 text-xs font-bold text-white bg-gray-800 dark:bg-amber-500 dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-amber-600 rounded-lg transition-colors flex items-center gap-1"
                 >
                   {savingMemo ? '저장 중...' : (memo?.id ? '수정' : '저장')}
                 </button>
@@ -340,7 +340,7 @@ const DiaryPage = () => {
                 <button
                   onClick={handleAddLog}
                   disabled={!inputAmount || saving}
-                  className={`${accent.btn} disabled:bg-gray-200 dark:disabled:bg-gray-600 text-white p-3.5 rounded-xl shadow-lg disabled:shadow-none transition-all active:scale-95`}
+                  className="bg-gray-800 dark:bg-amber-500 text-white dark:text-gray-900 p-3.5 rounded-xl shadow-lg transition-all active:scale-95"
                 >
                   {saving ? <Clock className="w-6 h-6 animate-spin" /> : <Plus className="w-6 h-6" />}
                 </button>

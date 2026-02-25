@@ -265,7 +265,7 @@ const DashboardPage = () => {
                                 onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = ''; }}
                               />
                           ) : null}
-                          <span className="text-lg font-bold text-white/80" style={currentChild.photoUrl ? { display: 'none' } : {}}>{currentChild.name?.charAt(0)}</span>
+                          <span className="text-white text-lg" style={currentChild.photoUrl ? {display:'none'} : {}}>👶</span>
                       </div>
                       {/* 상태 뱃지 (심플하게) */}
                       <div className={`absolute -bottom-1 -right-1 px-1.5 py-0.5 ${currentStatusInfo.color} border border-white rounded-full flex items-center shadow-sm`}>

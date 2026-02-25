@@ -186,7 +186,7 @@ const RecordPage = () => {
       };
 
   return (
-    <div className="h-full flex flex-col gap-6 relative">
+    <div className="pb-24 pt-6 px-4 h-full overflow-y-auto flex flex-col gap-6 relative">
       <GrowthInputModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -212,19 +212,16 @@ const RecordPage = () => {
       )}
 
       {/* 헤더 */}
-      <header className="flex justify-between items-center px-2 shrink-0">
-        <div>
-          <h2 className="text-2xl font-black text-gray-800 dark:text-white">성장 기록</h2>
-          <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">우리 아이의 성장 과정을 기록해요</p>
-        </div>
+      <div className="flex justify-between items-center shrink-0">
+        <h1 className="text-2xl font-black text-gray-800 dark:text-white">성장 기록</h1>
         <button
           onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200 dark:shadow-none"
+          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200"
         >
           <Plus className="w-4 h-4" />
           기록 추가
         </button>
-      </header>
+      </div>
 
       <div className="flex-1 overflow-y-auto min-h-0 pb-24 md:pb-0 pr-1 custom-scrollbar">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
@@ -287,7 +284,7 @@ const RecordPage = () => {
                 if (growthRecords.length === 0) {
                   return (
                     <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
-                      데이터가 없습니다. 오늘의 성장을 기록해보세요.
+                      데이터가 없습니다
                     </div>
                   );
                 }
