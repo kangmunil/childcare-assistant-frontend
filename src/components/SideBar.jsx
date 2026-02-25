@@ -17,8 +17,10 @@ const SideBar = () => {
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    logout();
-    navigate('/login');
+    if (window.confirm('정말 로그아웃 하시겠습니까?')) {
+      logout();
+      navigate('/login');
+    }
   };
 
   const menuItems = [

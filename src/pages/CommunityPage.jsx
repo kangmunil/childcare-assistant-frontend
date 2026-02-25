@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams, useNavigationType } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Search, PenLine, MessageSquare, Heart, User, MapPin } from 'lucide-react';
+import { Search, PenLine, MessageSquare, Heart, User, MapPin, Pin } from 'lucide-react';
 import api from '../lib/api';
 import { getLocalLikeMap, setLocalLike } from '../lib/likeStorage';
 import useStore from '../store/useStore';
@@ -10,6 +10,7 @@ import LocationSettingModal from '../components/LocationSettingModal';
 const CommunityPage = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [boards, setBoards] = useState([]);
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const pageParam = Math.max(1, Number(searchParams.get('page')) || 1);
@@ -36,7 +37,11 @@ const CommunityPage = () => {
   const [locationModalOpen, setLocationModalOpen] = useState(false);
   const { user, updateUserInfo } = useStore();
 
-  const queryKey = ['community', activeTab, debouncedQuery, pageParam, sizeParam];
+  const boardSlug = activeTab === 'all'
+    ? 'community'
+    : (boards.find(b => b.code === activeTab)?.slug || activeTab);
+
+  const queryKey = ['community', activeTab, boardSlug, debouncedQuery, pageParam, sizeParam];
 
   const {
     data,
@@ -47,8 +52,9 @@ const CommunityPage = () => {
     queryKey,
     queryFn: async ({ signal }) => {
       const params = new URLSearchParams();
-      if (activeTab !== 'all') {
-        params.set('category', activeTab);
+      const selectedBoard = boards.find(b => b.code === activeTab);
+      if (selectedBoard?.category) {
+        params.set('category', selectedBoard.category);
       }
       params.set('page', String(pageParam - 1));
       params.set('size', String(sizeParam));
@@ -57,7 +63,10 @@ const CommunityPage = () => {
         params.set('keyword', debouncedQuery);
       }
       const query = params.toString();
-      const response = await api.get(`/boards/community/items${query ? `?${query}` : ''}`, { signal });
+      const url = activeTab === 'all'
+        ? `/boards/items${query ? `?${query}` : ''}`
+        : `/boards/${boardSlug}/items${query ? `?${query}` : ''}`;
+      const response = await api.get(url, { signal });
       return response?.data || response || {};
     },
     staleTime: 1000 * 60 * 5,
@@ -187,11 +196,26 @@ const CommunityPage = () => {
     });
   }, [isFetching, data]);
 
-  const categoryLabels = {
-    qna: '질문',
-    daily: '일상공유',
-    tip: '육아꿀팁'
-  };
+  // 게시판 목록 조회 (GET /api/boards)
+  useEffect(() => {
+    const fetchBoards = async () => {
+      try {
+        const res = await api.get('/boards');
+        if (res.status === 'success' && Array.isArray(res.data)) {
+          setBoards(res.data);
+        }
+      } catch (error) {
+        console.error('게시판 목록 조회 실패:', error);
+      }
+    };
+    fetchBoards();
+  }, []);
+
+  const categoryLabels = boards.reduce((acc, board) => {
+    acc[board.code] = board.title;
+    return acc;
+  }, {});
+
 
   const formatDate = (value) => {
     if (!value) return '';
@@ -249,9 +273,9 @@ const CommunityPage = () => {
 
     try {
       if (wasLiked) {
-        await api.delete(`/boards/community/items/${postId}/like`);
+        await api.delete(`/boards/${boardSlug}/items/${postId}/like`);
       } else {
-        await api.post(`/boards/community/items/${postId}/like`);
+        await api.post(`/boards/${boardSlug}/items/${postId}/like`);
       }
     } catch (error) {
       setLikedMap((prev) => ({ ...prev, [postId]: wasLiked }));
@@ -311,25 +335,25 @@ const CommunityPage = () => {
         </div>
 
         <div className="flex gap-2 mt-4 overflow-x-auto no-scrollbar">
-          {['all', 'qna', 'daily', 'tip'].map(tab => (
+          {[{ code: 'all', title: '전체' }, ...boards].map(board => (
             <button
-              key={tab}
+              key={board.code}
               onClick={() => {
                 const nextParams = new URLSearchParams(searchParams);
-                if (tab === 'all') {
+                if (board.code === 'all') {
                   nextParams.delete('tab');
                 } else {
-                  nextParams.set('tab', tab);
+                  nextParams.set('tab', board.code);
                 }
                 nextParams.delete('page');
                 setSearchParams(nextParams, { replace: true });
               }}
-              className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${activeTab === tab
+              className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${activeTab === board.code
                   ? 'bg-stone-800 text-white dark:bg-amber-500 dark:text-gray-900'
                   : 'bg-white border border-stone-200 text-stone-500 hover:bg-stone-100 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700'
                 }`}
             >
-              {tab === 'all' ? '전체' : tab === 'qna' ? '질문&답변' : tab === 'daily' ? '육아일상' : '꿀팁공유'}
+              {board.title}
             </button>
           ))}
         </div>
@@ -353,7 +377,7 @@ const CommunityPage = () => {
             posts.map((post) => (
               <div
                 key={post.id}
-                onClick={() => navigate(`/community/${post.id}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`)}
+                onClick={() => navigate(`/community/${post.id}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`, { state: { boardSlug: post.boardSlug || boardSlug } })}
                 className="bg-white dark:bg-gray-800 p-5 lg:p-6 rounded-3xl border border-stone-100 dark:border-gray-700 shadow-sm hover:shadow-lg dark:shadow-none transition-shadow cursor-pointer active:scale-[0.98] active:bg-stone-50 dark:active:bg-gray-700 flex flex-col gap-4"
               >
                 <div className="flex items-start justify-between gap-3">
@@ -368,13 +392,21 @@ const CommunityPage = () => {
                       <span className="text-xs text-stone-400 dark:text-gray-400">{formatDate(post.regDate)}</span>
                     </div>
                   </div>
-                  {post.category && (
-                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${post.category === 'qna' ? 'bg-rose-50 text-rose-500 dark:bg-rose-900/30 dark:text-rose-300' :
-                        post.category === 'daily' ? 'bg-emerald-50 text-emerald-500 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-indigo-50 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-300'
-                      }`}>
-                      {categoryLabels[post.category] || post.category}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1.5">
+                     {post.fixYn === 'Y' && <Pin className="w-3.5 h-3.5 text-amber-500 fill-amber-500 rotate-45" />}
+                     {/*post.fixYn === 'Y' && (
+                      <span className="flex items-center gap-0.5 text-[10px] font-bold px-2 py-1 rounded-full bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300">
+                        <Pin className="w-3 h-3 rotate-45" />고정
+                      </span>
+                    )*/}
+                    {post.category && (
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${post.category === 'qna' ? 'bg-rose-50 text-rose-500 dark:bg-rose-900/30 dark:text-rose-300' :
+                          post.category === 'daily' ? 'bg-emerald-50 text-emerald-500 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-indigo-50 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-300'
+                        }`}>
+                        {categoryLabels[post.category] || post.category}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex flex-col gap-3">
@@ -478,7 +510,7 @@ const CommunityPage = () => {
 
       {/* 3. 글쓰기 버튼 (Floating) */}
       <button
-        onClick={() => navigate('/community/write')}
+        onClick={() => navigate(`/community/write${activeTab !== 'all' ? `?board=${activeTab}` : ''}`)}
         className="fixed bottom-24 left-6 md:left-auto md:bottom-28 md:right-10 bg-stone-900 text-white dark:bg-amber-500 dark:text-gray-900 w-14 h-14 rounded-full shadow-xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-50"
       >
         <PenLine className="w-6 h-6" />

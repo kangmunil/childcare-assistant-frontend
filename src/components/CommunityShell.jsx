@@ -33,7 +33,7 @@ const CommunityShell = () => {
     const fetchPopularPosts = async () => {
       setIsPopularLoading(true);
       try {
-        const response = await api.get('/boards/community/items');
+        const response = await api.get('/boards/items');
         const data = response?.data || response || {};
         if (isMounted) {
           setPopularPosts(data.popularItems || []);

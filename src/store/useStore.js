@@ -421,14 +421,28 @@ const useStore = create(
             set({
               children: childList,
               childrenLoaded: true,
-              // 활성화된 자녀가 없거나 삭제된 경우 첫 번째 자녀 선택
-              activeChildId: childList.length > 0 ? childList[0].id : null
+              // 대표 자녀(isPrimary)가 있으면 우선 선택, 없으면 첫 번째 자녀
+              activeChildId: childList.find(c => c.isPrimary === true)?.id || childList[0]?.id || null
             });
             console.log("✅ 자녀 목록 갱신:", childList.length, "명");
           }
         } catch (error) {
           set({ childrenLoaded: true });
           console.error("❌ 자녀 목록 조회 실패:", error);
+        }
+      },
+
+      // 4-1-1. 대표 자녀 설정 (PATCH /api/children/{childId}/primary)
+      setPrimaryChild: async (childId) => {
+        try {
+          const response = await http.patch(`/children/${childId}/primary`);
+          if (response.data.status === 'success') {
+            await get().fetchChildren();
+            return { success: true };
+          }
+          return { success: false, message: response.data.message || '대표 자녀 설정 실패' };
+        } catch (error) {
+          return { success: false, message: error.response?.data?.message || '대표 자녀 설정 중 오류가 발생했습니다.' };
         }
       },
 
@@ -447,11 +461,13 @@ const useStore = create(
             };
 
             const response = await http.post('/children', payload);
-            const { status, message } = response.data;
+            const { status, data, message } = response.data;
 
             if (status === 'success') {
+                const existingIds = new Set(get().children.map(c => c.id));
                 await get().fetchChildren(); // 목록 새로고침
-                return { success: true, message: '자녀가 등록되었습니다.' };
+                const newChild = get().children.find(c => !existingIds.has(c.id));
+                return { success: true, childId: newChild?.id, message: '자녀가 등록되었습니다.' };
             }
             return { success: false, message: message || '등록 실패' };
         } catch (error) {
@@ -486,6 +502,117 @@ const useStore = create(
             return { success: false, message: message };
         } catch (error) {
             return { success: false, message: error.response?.data?.message || '삭제 실패' };
+        }
+      },
+
+      // 4-5. 자녀 이미지 업로드 (POST /api/children/{childId}/images)
+      uploadChildImage: async (childId, file) => {
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          const response = await http.post(`/children/${childId}/images`, formData);
+          if (response.data.status === 'success') {
+            await get().fetchChildren();
+            return { success: true };
+          }
+          return { success: false, message: response.data.message };
+        } catch (error) {
+          return { success: false, message: error.response?.data?.message || '이미지 업로드 실패' };
+        }
+      },
+
+      // ==========================================
+      // [4-6] 가족 관리 API 연동
+      // ==========================================
+
+      // 자녀별 가족 구성원 조회 (GET /api/children/{childId}/family)
+      fetchFamilyMembers: async (childId) => {
+        try {
+          const response = await http.get(`/children/${childId}/family`);
+          const { status, data } = response.data;
+          if (status === 'success') {
+            return { success: true, data: data || [] };
+          }
+          return { success: false, data: [] };
+        } catch (error) {
+          console.error('가족 구성원 조회 실패:', error);
+          return { success: false, data: [] };
+        }
+      },
+
+      // 가족 공유 추가 - 공유코드 (POST /api/children/{childId}/family)
+      addFamilyMember: async (childId, inviteCode) => {
+        try {
+          const response = await http.post(`/children/${childId}/family`, { inviteCode });
+          const { status, message } = response.data;
+          if (status === 'success') {
+            await get().fetchChildren();
+            return { success: true, message: '가족이 추가되었습니다.' };
+          }
+          return { success: false, message: message || '가족 추가 실패' };
+        } catch (error) {
+          const msg = error.response?.data?.message || '가족 추가 중 오류가 발생했습니다.';
+          return { success: false, message: msg };
+        }
+      },
+
+      // 가족 공유 해제 (DELETE /api/children/{childId}/family/{memberId})
+      removeFamilyMember: async (childId, memberId) => {
+        try {
+          const response = await http.delete(`/children/${childId}/family/${memberId}`);
+          const { status, message } = response.data;
+          if (status === 'success') {
+            return { success: true, message: '가족이 해제되었습니다.' };
+          }
+          return { success: false, message: message || '가족 해제 실패' };
+        } catch (error) {
+          const msg = error.response?.data?.message || '가족 해제 중 오류가 발생했습니다.';
+          return { success: false, message: msg };
+        }
+      },
+
+      // 관계명 수정 (PUT /api/children/{childId}/family/{memberId}/relation)
+      updateFamilyRelation: async (childId, memberId, relation) => {
+        try {
+          const response = await http.put(`/children/${childId}/family/${memberId}/relation`, { relation });
+          const { status, message } = response.data;
+          if (status === 'success') {
+            return { success: true, message: '관계가 수정되었습니다.' };
+          }
+          return { success: false, message: message || '관계 수정 실패' };
+        } catch (error) {
+          const msg = error.response?.data?.message || '관계 수정 중 오류가 발생했습니다.';
+          return { success: false, message: msg };
+        }
+      },
+
+      // 공유 승인 (PUT /api/children/{childId}/family/{memberId}/approve)
+      approveFamilyMember: async (childId, memberId) => {
+        try {
+          const response = await http.put(`/children/${childId}/family/${memberId}/approve`);
+          const { status, message } = response.data;
+          if (status === 'success') {
+            return { success: true, message: '승인되었습니다.' };
+          }
+          return { success: false, message: message || '승인 실패' };
+        } catch (error) {
+          const msg = error.response?.data?.message || '승인 중 오류가 발생했습니다.';
+          return { success: false, message: msg };
+        }
+      },
+
+      // 공유 거절 (DELETE /api/children/{childId}/family/{memberId}/reject)
+      rejectFamilyMember: async (childId, memberId) => {
+        try {
+          const response = await http.delete(`/children/${childId}/family/${memberId}/reject`);
+          const { status, message } = response.data;
+          if (status === 'success') {
+            return { success: true, message: '거절되었습니다.' };
+          }
+          return { success: false, message: message || '거절 실패' };
+        } catch (error) {
+          const msg = error.response?.data?.message || '거절 중 오류가 발생했습니다.';
+          return { success: false, message: msg };
         }
       },
 

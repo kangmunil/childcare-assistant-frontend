@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Image as ImageIcon, X } from 'lucide-react';
 import api from '../lib/api';
@@ -7,21 +7,39 @@ import { useAuth } from '../contexts/AuthContext';
 
 const PostEditPage = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { user, loading: authLoading } = useAuth();
     const { id } = useParams();
+    const passedSlug = location.state?.boardSlug;
     const queryClient = useQueryClient();
 
+    const [boards, setBoards] = useState([]);
     const [category, setCategory] = useState('');
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
 
+    useEffect(() => {
+        const fetchBoards = async () => {
+            try {
+                const res = await api.get('/boards');
+                if (res.status === 'success' && Array.isArray(res.data)) {
+                    setBoards(res.data);
+                }
+            } catch (error) {
+                console.error('게시판 목록 조회 실패:', error);
+            }
+        };
+        fetchBoards();
+    }, []);
+
     // 기존 게시글 데이터 조회
     const { data: post, isLoading, error } = useQuery({
         queryKey: ['community', 'detail', id],
         queryFn: async ({ signal }) => {
-            const response = await api.get(`/boards/community/items/${id}`, { signal });
+            const slug = passedSlug || 'community';
+            const response = await api.get(`/boards/${slug}/items/${id}`, { signal });
             return response?.data || response || null;
         },
         enabled: Boolean(id),
@@ -48,7 +66,7 @@ const PostEditPage = () => {
 
     // 게시글 수정 mutation
     const updateMutation = useMutation({
-        mutationFn: (data) => api.put(`/boards/community/items/${id}`, data),
+        mutationFn: (data) => api.put(`/boards/${post?.boardSlug || 'community'}/items/${id}`, data),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['community', 'detail', id] });
             queryClient.invalidateQueries({ queryKey: ['community'] });
@@ -122,17 +140,17 @@ const PostEditPage = () => {
 
                 <div className="p-6 space-y-6">
                     {/* 카테고리 선택 */}
-                    <div className="flex gap-2">
-                        {['qna', 'daily', 'tip'].map((cat) => (
+                    <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                        {boards.map((board) => (
                             <button
-                                key={cat}
-                                onClick={() => setCategory(cat)}
-                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${category === cat
+                                key={board.code}
+                                onClick={() => setCategory(board.code)}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${category === board.code
                                     ? 'bg-stone-800 text-white shadow-md dark:bg-amber-500 dark:text-gray-900'
                                     : 'bg-stone-50 text-stone-400 border border-stone-100 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
                                     }`}
                             >
-                                {cat === 'qna' ? '질문해요' : cat === 'daily' ? '일상공유' : '육아꿀팁'}
+                                {board.title}
                             </button>
                         ))}
                     </div>
