@@ -1,13 +1,26 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import api from '../lib/api';
+import useStore from '../store/useStore';
 
 const CommunityShell = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const containerRef = useRef(null);
-  const [popularPosts, setPopularPosts] = useState([]);
-  const [isPopularLoading, setIsPopularLoading] = useState(false);
+  const { user } = useStore();
+
+  const hasUserLocation = Boolean(
+    (typeof user?.regionCode === 'string' && user.regionCode.trim())
+    || (typeof user?.postcode === 'string' && user.postcode.trim())
+  );
+  const locationScope = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    const raw = params.get('locationScope');
+    if (raw === 'neighbor' || raw === 'all') return raw;
+    return hasUserLocation ? 'neighbor' : 'all';
+  }, [location.search, hasUserLocation]);
+  const isNeighborScopeBlocked = locationScope === 'neighbor' && !hasUserLocation;
 
   useEffect(() => {
     if (location.pathname === '/community') return;
@@ -27,33 +40,27 @@ const CommunityShell = () => {
     }
   }, [location.pathname]);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const fetchPopularPosts = async () => {
-      setIsPopularLoading(true);
-      try {
-        const response = await api.get('/boards/items');
-        const data = response?.data || response || {};
-        if (isMounted) {
-          setPopularPosts(data.popularItems || []);
-        }
-      } catch (error) {
-        if (isMounted) {
-          setPopularPosts([]);
-        }
-      } finally {
-        if (isMounted) {
-          setIsPopularLoading(false);
-        }
-      }
-    };
-
-    fetchPopularPosts();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  const {
+    data: popularPosts = [],
+    isFetching
+  } = useQuery({
+    queryKey: ['community', 'highlights', locationScope],
+    queryFn: async ({ signal }) => {
+      const params = new URLSearchParams({
+        page: '0',
+        size: '1',
+        includeHighlights: 'true',
+        locationScope
+      });
+      const response = await api.get(`/boards/community/items?${params.toString()}`, { signal });
+      const data = response?.data || response || {};
+      return Array.isArray(data.popularItems) ? data.popularItems : [];
+    },
+    enabled: !isNeighborScopeBlocked,
+    staleTime: 1000 * 60,
+    gcTime: 1000 * 60 * 10
+  });
+  const isPopularLoading = isFetching;
 
   return (
     <div ref={containerRef} className="px-4 md:px-6 lg:px-8">
