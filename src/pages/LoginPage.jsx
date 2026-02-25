@@ -135,7 +135,7 @@ const LoginPage = () => {
                      placeholder="이메일"
                      value={formData.email}
                      onChange={handleChange}
-                     className="w-full bg-white text-gray-900 border border-gray-200 rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all text-sm shadow-sm"
+                     className="w-full bg-white border border-gray-200 rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all text-sm shadow-sm"
                    />
                </div>
                <div>
@@ -145,7 +145,7 @@ const LoginPage = () => {
                      placeholder="비밀번호"
                      value={formData.password}
                      onChange={handleChange}
-                     className="w-full bg-white text-gray-900 border border-gray-200 rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all text-sm shadow-sm"
+                     className="w-full bg-white border border-gray-200 rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all text-sm shadow-sm"
                    />
                </div>
 
@@ -184,7 +184,7 @@ const LoginPage = () => {
                    )}
                </button>
 
-               {/* 구글 로그인 - 도메인 설정 후 오픈 예정
+               {/* 구글 */}
                <button
                    type="button"
                    onClick={handleGoogleLogin}
@@ -200,7 +200,6 @@ const LoginPage = () => {
                      </>
                    )}
                </button>
-               */}
            </div>
 
        </div>

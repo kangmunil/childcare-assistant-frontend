@@ -29,7 +29,7 @@ const api = {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || error.error || `API Error: ${response.status}`);
+      throw new Error(error.message || `API Error: ${response.status}`);
     }
 
     return response.json();
@@ -38,8 +38,8 @@ const api = {
   /**
    * GET 요청
    */
-  get(endpoint, options = {}) {
-    return this.request(endpoint, { method: 'GET', ...options });
+  get(endpoint) {
+    return this.request(endpoint, { method: 'GET' });
   },
 
   /**
