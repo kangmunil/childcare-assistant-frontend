@@ -32,18 +32,25 @@ const GuidePage = () => {
     // 데이터가 안 불러와졌을 경우를 대비해 빈 배열 처리
     const data = GUIDE_DATA || []; 
     
-    return data.filter(item => {
+    const filtered = data.filter(item => {
       const matchCategory = activeCategory === 'all' || item.category === activeCategory;
-      
+
       // 검색어 대소문자 무시 (UX 향상)
       const normalizedSearch = searchTerm.toLowerCase();
-      const matchSearch = 
-        item.title.toLowerCase().includes(normalizedSearch) || 
+      const matchSearch =
+        item.title.toLowerCase().includes(normalizedSearch) ||
         item.content.toLowerCase().includes(normalizedSearch);
-      
+
       return matchCategory && matchSearch;
     });
-  }, [activeCategory, searchTerm]);
+
+    // 맞춤 정보(월령 추천) 항목을 최상단으로 정렬
+    return filtered.sort((a, b) => {
+      const aRec = currentMonths >= a.minMonth && currentMonths <= a.maxMonth ? 1 : 0;
+      const bRec = currentMonths >= b.minMonth && currentMonths <= b.maxMonth ? 1 : 0;
+      return bRec - aRec;
+    });
+  }, [activeCategory, searchTerm, currentMonths]);
 
   // 아코디언 토글
   const toggleAccordion = (id) => {
@@ -51,12 +58,12 @@ const GuidePage = () => {
   };
 
   return (
-    <div className="h-full flex flex-col gap-6 p-4 md:p-0"> {/* 모바일 여백 추가 */}
+    <div className="pb-24 pt-6 px-4 h-full overflow-y-auto flex flex-col gap-6"> {/* 모바일 여백 추가 */}
       
       {/* --- 헤더 섹션 --- */}
       <div className="shrink-0 space-y-4">
         <div>
-          <h2 className="text-2xl font-black text-gray-800 dark:text-white">육아 가이드 📚</h2>
+          <h1 className="text-2xl font-black text-gray-800 dark:text-white">육아 가이드</h1>
           <p className="text-sm text-gray-500 mt-1">
             {currentChild ? (
               <>현재 <span className="text-amber-500 font-bold">{currentMonths}개월</span>인 {currentChild.name}를 위한 꿀팁</>

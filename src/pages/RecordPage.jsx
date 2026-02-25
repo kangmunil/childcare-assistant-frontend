@@ -186,7 +186,7 @@ const RecordPage = () => {
       };
 
   return (
-    <div className="h-full flex flex-col gap-6 relative">
+    <div className="pb-24 pt-6 px-4 h-full overflow-y-auto flex flex-col gap-6 relative">
       <GrowthInputModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -212,8 +212,8 @@ const RecordPage = () => {
       )}
 
       {/* 헤더 */}
-      <div className="flex justify-between items-center shrink-0 pt-1">
-        <h2 className="text-xl font-bold text-gray-800 dark:text-white">신체 발달 기록</h2>
+      <div className="flex justify-between items-center shrink-0">
+        <h1 className="text-2xl font-black text-gray-800 dark:text-white">성장 기록</h1>
         <button
           onClick={() => setIsModalOpen(true)}
           className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200"

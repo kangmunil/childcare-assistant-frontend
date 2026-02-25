@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, User, Shield, HelpCircle, LogOut, ChevronRight, Moon, Volume2, X, Plus, Trash2, AlertTriangle } from 'lucide-react';
-import useStore from '../store/useStore'; 
+import { Bell, User, Shield, HelpCircle, LogOut, ChevronRight, Moon, Volume2, X, Plus, Trash2, AlertTriangle, Pencil, Camera, Users, Copy, UserMinus, Star } from 'lucide-react';
+import useStore from '../store/useStore';
 
 // [1] 재사용 가능한 공통 모달 컴포넌트
 const CommonModal = ({ isOpen, onClose, title, children }) => {
@@ -41,11 +41,21 @@ const SettingsPage = () => {
     toggleDarkMode,
     children,    
     addChild,       // 자녀 등록 API
-    deleteChild     // 자녀 삭제 API
+    deleteChild,    // 자녀 삭제 API
+    updateChild,    // 자녀 수정 API
+    uploadChildImage, // 자녀 이미지 업로드 API
+    setPrimaryChild,  // 대표 자녀 설정 API
+    fetchFamilyMembers,   // 가족 구성원 조회
+    addFamilyMember,      // 가족 추가
+    removeFamilyMember,   // 가족 해제
+    updateFamilyRelation, // 관계명 수정
+    approveFamilyMember,  // 공유 승인
+    rejectFamilyMember    // 공유 거절
   } = useStore();
   
   // --- 로컬 UI 상태 ---
-  const [notifications, setNotifications] = useState(true); 
+  const [notifications, setNotifications] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [activeModal, setActiveModal] = useState(null); 
   
   // 프로필 수정용 상태
@@ -223,11 +233,12 @@ const SettingsPage = () => {
             toggleState={isDarkMode}    
             onToggle={toggleDarkMode}   
         />
-         <MenuItem 
-            icon={Volume2} 
-            label="효과음" 
-            value="켜짐"
-            onClick={() => {}} 
+         <MenuItem
+            icon={Volume2}
+            label="효과음"
+            isToggle
+            toggleState={soundEnabled}
+            onToggle={() => setSoundEnabled(!soundEnabled)}
         />
       </Section>
 
@@ -339,37 +350,150 @@ const SettingsPage = () => {
                     </div>
                 )}
 
-                {children.map((child) => (
-                    <div key={child.id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-3 rounded-xl border border-gray-100 dark:border-gray-600">
-                        <div className="flex items-center gap-3">
-                             <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-300 flex items-center justify-center font-bold text-xs">
-                                {child.name.charAt(0)}
-                             </div>
-                             <div>
-                                <span className="font-bold text-gray-700 dark:text-white block">{child.name}</span>
-                                <span className="text-xs text-gray-400 dark:text-gray-500">
-                                    {child.birthDate} 
-                                </span>
-                            </div>
-                        </div>
-                        <button 
-                            onClick={() => handleDeleteChild(child.id)}
-                            className="p-2 text-gray-300 dark:text-gray-500 hover:text-red-500 transition-colors"
-                        >
-                            <Trash2 className="w-4 h-4" />
-                        </button>
-                    </div>
-                ))}
-                
-                <button 
-                    onClick={() => setIsAddingChild(true)} 
-                    className="w-full py-3 border-2 border-dashed border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 rounded-xl flex items-center justify-center gap-2 hover:border-amber-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-gray-700 transition-all mt-2"
-                >
-                    <Plus className="w-4 h-4" />
-                    <span className="text-sm font-bold">자녀 추가하기</span>
-                </button>
-                
-                <button 
+                {/* 내 아이 그룹 */}
+                {(() => {
+                    const myChildren = children.filter(c => c.isOwner);
+                    const sharedGroups = Object.entries(
+                        children.filter(c => !c.isOwner)
+                            .reduce((acc, c) => {
+                                const key = c.ownerName || '알 수 없음';
+                                (acc[key] = acc[key] || []).push(c);
+                                return acc;
+                            }, {})
+                    );
+
+                    return (
+                        <>
+                            {myChildren.length > 0 && (
+                                <div>
+                                    <p className="text-xs font-bold text-gray-400 dark:text-gray-500 mb-2 ml-1">내 아이</p>
+                                    <div className="space-y-2">
+                                        {myChildren.map((child) => (
+                                            <div key={child.id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-3 rounded-xl border border-gray-100 dark:border-gray-600">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-300 flex items-center justify-center font-bold text-xs">
+                                                        {child.name.charAt(0)}
+                                                    </div>
+                                                    <div>
+                                                        <span className="font-bold text-gray-700 dark:text-white block">{child.name}</span>
+                                                        <span className="text-xs text-gray-400 dark:text-gray-500">{child.birthDate}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <button
+                                                        onClick={async () => {
+                                                            const result = await setPrimaryChild(child.id);
+                                                            if (!result.success) {
+                                                                alert(result.message || '대표 자녀 설정에 실패했습니다.');
+                                                            }
+                                                        }}
+                                                        className="p-2 transition-colors"
+                                                        title={child.isPrimary === true ? '대표 자녀' : '대표 자녀로 설정'}
+                                                    >
+                                                        <Star className={`w-4 h-4 ${child.isPrimary === true ? 'fill-amber-500 text-amber-500' : 'text-gray-300 dark:text-gray-500 hover:text-amber-400'}`} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditChildImageFile(null);
+                                                            setEditChildImagePreview(null);
+                                                            setEditingChild({
+                                                                id: child.id,
+                                                                name: child.name,
+                                                                birthDay: child.birthDay || child.birthDate || '',
+                                                                birthTime: child.birthTime || '',
+                                                                gender: child.gender === 'female' || child.gender === 'F' ? 'F' : 'M',
+                                                                height: child.height,
+                                                                weight: child.weight,
+                                                                photoUrl: child.photoUrl || ''
+                                                            });
+                                                        }}
+                                                        className="p-2 text-gray-300 dark:text-gray-500 hover:text-amber-500 transition-colors"
+                                                    >
+                                                        <Pencil className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteChild(child.id)}
+                                                        className="p-2 text-gray-300 dark:text-gray-500 hover:text-red-500 transition-colors"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <button
+                                        onClick={() => setIsAddingChild(true)}
+                                        className="w-full py-3 border-2 border-dashed border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 rounded-xl flex items-center justify-center gap-2 hover:border-amber-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-gray-700 transition-all mt-2"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                        <span className="text-sm font-bold">자녀 추가하기</span>
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* 내 아이가 없을 때도 추가 버튼 표시 */}
+                            {myChildren.length === 0 && children.length > 0 && (
+                                <div>
+                                    <p className="text-xs font-bold text-gray-400 dark:text-gray-500 mb-2 ml-1">내 아이</p>
+                                    <button
+                                        onClick={() => setIsAddingChild(true)}
+                                        className="w-full py-3 border-2 border-dashed border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500 rounded-xl flex items-center justify-center gap-2 hover:border-amber-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-gray-700 transition-all"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                        <span className="text-sm font-bold">자녀 추가하기</span>
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* 공유받은 아이 그룹 */}
+                            {sharedGroups.map(([ownerName, sharedChildren]) => (
+                                <div key={ownerName}>
+                                    <p className="text-xs font-bold text-gray-400 dark:text-gray-500 mb-2 ml-1">{ownerName}님의 아이</p>
+                                    <div className="space-y-2">
+                                        {sharedChildren.map((child) => (
+                                            <div key={child.id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-3 rounded-xl border border-gray-100 dark:border-gray-600">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 flex items-center justify-center font-bold text-xs">
+                                                        {child.name.charAt(0)}
+                                                    </div>
+                                                    <div>
+                                                        <span className="font-bold text-gray-700 dark:text-white block">{child.name}</span>
+                                                        <span className="text-xs text-gray-400 dark:text-gray-500">{child.birthDate}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    {/* 공유받은 아이: 수정만 가능, 삭제 불가 */}
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditChildImageFile(null);
+                                                            setEditChildImagePreview(null);
+                                                            setEditingChild({
+                                                                id: child.id,
+                                                                name: child.name,
+                                                                birthDay: child.birthDay || child.birthDate || '',
+                                                                birthTime: child.birthTime || '',
+                                                                gender: child.gender === 'female' || child.gender === 'F' ? 'F' : 'M',
+                                                                height: child.height,
+                                                                weight: child.weight,
+                                                                photoUrl: child.photoUrl || ''
+                                                            });
+                                                        }}
+                                                        className="p-2 text-gray-300 dark:text-gray-500 hover:text-amber-500 transition-colors"
+                                                    >
+                                                        <Pencil className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </>
+                    );
+                })()}
+
+                <button
                     onClick={() => setActiveModal(null)}
                     className="w-full py-3 bg-gray-800 dark:bg-gray-600 text-white font-bold rounded-xl mt-4"
                 >

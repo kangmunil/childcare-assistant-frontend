@@ -155,7 +155,7 @@ const SignupPage = () => {
               placeholder="이름 (실명)"
               value={formData.name}
               onChange={handleChange}
-              className="w-full bg-white border border-gray-200 rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all text-sm shadow-sm"
+              className="w-full bg-white text-gray-900 border border-gray-200 rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all text-sm shadow-sm"
             />
           </div>
           <div>
@@ -165,7 +165,7 @@ const SignupPage = () => {
               placeholder="이메일"
               value={formData.email}
               onChange={handleChange}
-              className="w-full bg-white border border-gray-200 rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all text-sm shadow-sm"
+              className="w-full bg-white text-gray-900 border border-gray-200 rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all text-sm shadow-sm"
             />
           </div>
           <div>
@@ -175,7 +175,7 @@ const SignupPage = () => {
               placeholder="비밀번호 (6자 이상)"
               value={formData.password}
               onChange={handleChange}
-              className="w-full bg-white border border-gray-200 rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all text-sm shadow-sm"
+              className="w-full bg-white text-gray-900 border border-gray-200 rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all text-sm shadow-sm"
             />
           </div>
           <div>
@@ -185,13 +185,26 @@ const SignupPage = () => {
               placeholder="비밀번호 확인"
               value={formData.confirmPassword}
               onChange={handleChange}
-              className={`w-full bg-white border rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 transition-all text-sm shadow-sm ${
+              className={`w-full bg-white text-gray-900 border rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 transition-all text-sm shadow-sm ${
                 formData.password && formData.confirmPassword && formData.password !== formData.confirmPassword
                   ? 'border-red-300 focus:ring-red-300'
                   : 'border-gray-200 focus:ring-amber-400'
               }`}
             />
           </div>
+          {/* //작업 보류
+          <div>
+            <input
+              type="text"
+              name="inviteCode"
+              placeholder="공유코드 (선택)"
+              value={formData.inviteCode}
+              onChange={handleChange}
+              className="w-full bg-white text-gray-900 border border-gray-200 rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all text-sm shadow-sm"
+            />
+            <p className="text-xs text-gray-400 mt-1.5 ml-2">가족에게 받은 공유코드가 있다면 입력해주세요</p>
+          </div>
+          */}
 
           <button
             type="submit"

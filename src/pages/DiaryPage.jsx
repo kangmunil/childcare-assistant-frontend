@@ -231,7 +231,7 @@ const DiaryPage = () => {
   const filteredLogs = logs.filter(log => log.itemId === selectedItemId);
 
   return (
-    <div className="h-full flex flex-col gap-6 pb-24 md:pb-0">
+    <div className="pb-24 pt-6 px-4 h-full overflow-y-auto flex flex-col gap-6">
       {/* 통계 모달 */}
       <DiaryStatsModal
         isOpen={isStatsOpen}
@@ -243,61 +243,28 @@ const DiaryPage = () => {
       />
 
       {/* 헤더 */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-1">
-        <div className="flex items-center gap-2">
-          <h2 className="text-xl font-bold text-gray-800 dark:text-white">하루 일지</h2>
-          <div ref={childMenuRef} className="relative">
-            <button
-              type="button"
-              onClick={() => setIsChildMenuOpen((prev) => !prev)}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
-              <span>{currentChild?.name || '아이'}</span>
-              <ChevronDown className={`w-4 h-4 transition-transform ${isChildMenuOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {isChildMenuOpen && (
-              <div className="absolute left-0 mt-2 w-48 rounded-2xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg p-2 z-20">
-                {children.map((child) => (
-                  <button
-                    key={child.id}
-                    type="button"
-                    onClick={() => {
-                      setActiveChild(child.id);
-                      setIsChildMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
-                      child.id === currentChild?.id
-                        ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-                        : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
-                    }`}
-                  >
-                    <span>{child.name}</span>
-                    {child.id === currentChild?.id && (
-                      <span className="text-xs font-bold text-amber-600 dark:text-amber-300">선택됨</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+      <header className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-black text-gray-800 dark:text-white">하루 일지</h1>
+          <p className="text-gray-500 text-sm font-medium">오늘 하루를 기록해보세요!</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsStatsOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 rounded-xl font-medium text-sm hover:bg-indigo-200 dark:hover:bg-indigo-900 transition-colors"
+            className="p-2 bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm transition-colors"
           >
-            <BarChart3 className="w-4 h-4" />
-            통계
+            <BarChart3 className="w-5 h-5 text-white" />
           </button>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl font-medium text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-amber-400"
-          />
+          <div className="flex items-center bg-white dark:bg-gray-800 p-2 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="text-sm font-bold text-gray-800 dark:text-gray-200 bg-transparent focus:outline-none text-center [&::-webkit-calendar-picker-indicator]:mx-auto"
+            />
+          </div>
         </div>
-      </div>
+      </header>
 
       <div className="flex-1 overflow-y-auto min-h-0 pr-1 custom-scrollbar">
         <div className="flex flex-col lg:grid lg:grid-cols-12 gap-6">
@@ -355,7 +322,7 @@ const DiaryPage = () => {
                 <button
                   onClick={handleSaveMemo}
                   disabled={savingMemo || !memoContent.trim()}
-                  className="px-4 py-1.5 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors disabled:bg-gray-300 dark:disabled:bg-gray-600 flex items-center gap-1"
+                  className="px-4 py-1.5 text-xs font-bold text-white dark:text-gray-900 bg-gray-800 dark:bg-amber-500 hover:bg-gray-700 dark:hover:bg-amber-600 rounded-lg transition-colors flex items-center gap-1"
                 >
                   {savingMemo ? '저장 중...' : (memo?.id ? '수정' : '저장')}
                 </button>
@@ -395,7 +362,7 @@ const DiaryPage = () => {
                 <button
                   onClick={handleAddLog}
                   disabled={!inputAmount || saving}
-                  className={`${accent.btn} disabled:bg-gray-200 dark:disabled:bg-gray-600 text-white p-3.5 rounded-xl shadow-lg disabled:shadow-none transition-all active:scale-95`}
+                  className="bg-gray-800 dark:bg-amber-500 hover:bg-gray-700 dark:hover:bg-amber-600 text-white dark:text-gray-900 p-3.5 rounded-xl shadow-lg transition-all active:scale-95"
                 >
                   {saving ? <Clock className="w-6 h-6 animate-spin" /> : <Plus className="w-6 h-6" />}
                 </button>

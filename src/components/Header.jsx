@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Bell, X, Baby, Settings } from 'lucide-react';
 import useStore from '../store/useStore';
 import NotificationDropdown from './NotificationDropdown';
@@ -7,6 +7,10 @@ import NotificationDropdown from './NotificationDropdown';
 const Header = () => {
   const { children, activeChildId, setActiveChild, addChild, notifications } = useStore();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // 자녀 목록이 필요 없는 페이지
+  const hideChildSelector = location.pathname.startsWith('/community') || location.pathname === '/settings';
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isNotiOpen, setIsNotiOpen] = useState(false);
@@ -51,15 +55,17 @@ const Header = () => {
       {/* z-index를 40으로 유지하되, 필요 시 모달보다 낮아야 함 */}
       <header className="flex justify-between items-center mb-4 px-1 shrink-0 relative z-40">
         
-        {/* [수정됨] 인사말(H1) 삭제하고 아이 선택 버튼만 남김 */}
+        {/* 자녀 선택 버튼 (특정 페이지에서는 숨김) */}
         <div className="flex gap-2 flex-wrap items-center">
-            {children.map(child => (
-                <button 
+          {!hideChildSelector && (
+            <>
+              {children.map(child => (
+                <button
                     key={child.id}
                     onClick={() => setActiveChild(child.id)}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${
-                        activeChildId === child.id 
-                        ? 'bg-amber-500 text-white border-amber-500 shadow-md ring-2 ring-amber-200' 
+                        activeChildId === child.id
+                        ? 'bg-amber-500 text-white border-amber-500 shadow-md ring-2 ring-amber-200'
                         : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50'
                     }`}
                 >
@@ -73,14 +79,16 @@ const Header = () => {
                     </div>
                     {child.name}
                 </button>
-            ))}
-            
-            <button 
-                onClick={() => setIsModalOpen(true)}
-                className="w-8 h-8 rounded-full border border-dashed border-gray-300 flex items-center justify-center text-gray-300 hover:text-amber-500 hover:border-amber-400 transition-colors"
-            >
-                <Plus className="w-4 h-4" />
-            </button>
+              ))}
+
+              <button
+                  onClick={() => setIsModalOpen(true)}
+                  className="w-8 h-8 rounded-full border border-dashed border-gray-300 flex items-center justify-center text-gray-300 hover:text-amber-500 hover:border-amber-400 transition-colors"
+              >
+                  <Plus className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
 
         {/* 우측 버튼 영역 */}

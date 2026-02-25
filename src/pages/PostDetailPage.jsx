@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, MoreHorizontal, Heart, MessageSquare, Share2, User, Send, Trash2, Edit3, X } from 'lucide-react';
+import { ArrowLeft, MoreHorizontal, Heart, MessageSquare, Share2, User, Send, Trash2, Edit3, X, Pin, Lock } from 'lucide-react';
 import api from '../lib/api';
 import { getLocalLikeMap, setLocalLike } from '../lib/likeStorage';
 import { supabase } from '../api/supabase';
@@ -9,8 +9,10 @@ import { useAuth } from '../contexts/AuthContext';
 
 const PostDetailPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const { id } = useParams();
+  const passedSlug = location.state?.boardSlug;
   const [isLikeLoading, setIsLikeLoading] = useState(false);
   const [commentInput, setCommentInput] = useState('');
   const [replyTarget, setReplyTarget] = useState(null);
@@ -21,6 +23,8 @@ const PostDetailPage = () => {
   const [editingContent, setEditingContent] = useState('');
   const [showPostMenu, setShowPostMenu] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isSecret, setIsSecret] = useState(false);
+  const [isReplySecret, setIsReplySecret] = useState(false);
   const commentTextareaRef = useRef(null);
   const replyTextareaRef = useRef(null);
   const queryClient = useQueryClient();
@@ -56,7 +60,8 @@ const PostDetailPage = () => {
   } = useQuery({
     queryKey: ['community', 'detail', id],
     queryFn: async ({ signal }) => {
-      const response = await api.get(`/boards/community/items/${id}`, { signal });
+      const slug = passedSlug || 'community';
+      const response = await api.get(`/boards/${slug}/items/${id}`, { signal });
       const data = response?.data || response || null;
       const localLikeMap = getLocalLikeMap();
       if (!data) return null;
@@ -98,7 +103,8 @@ const PostDetailPage = () => {
   } = useQuery({
     queryKey: ['community', 'comments', id],
     queryFn: async ({ signal }) => {
-      const response = await api.get(`/boards/community/items/${id}/comments`, { signal });
+      const slug = post?.boardSlug || 'community';
+      const response = await api.get(`/boards/${slug}/items/${id}/comments`, { signal });
       const data = response?.data || response || [];
       return Array.isArray(data) ? data : [];
     },
@@ -162,11 +168,10 @@ const PostDetailPage = () => {
 
   const updateCommentCountCache = ({ targetId, increment }) => {
     const safeIncrement = Number.isFinite(increment) ? increment : 0;
-    const safeTargetId = Number.isFinite(targetId) ? targetId : null;
-    if (!safeIncrement || !safeTargetId) return;
+    if (!safeIncrement || !targetId) return;
 
-    queryClient.setQueryData(['community', 'detail', safeTargetId], (old) => {
-      if (!old || typeof old !== 'object' || old.id !== safeTargetId) return old;
+    queryClient.setQueryData(['community', 'detail', String(targetId)], (old) => {
+      if (!old || typeof old !== 'object') return old;
       const nextCount = Math.max(0, (old.commentCount ?? 0) + safeIncrement);
       return {
         ...old,
@@ -182,7 +187,7 @@ const PostDetailPage = () => {
       const updateItems = (items) => (
         Array.isArray(items)
           ? items.map((item) => {
-            if (item.id !== safeTargetId) return item;
+            if (item.id !== targetId) return item;
             const nextCount = Math.max(0, (item.commentCount ?? 0) + safeIncrement);
             return { ...item, commentCount: nextCount };
           })
@@ -229,7 +234,7 @@ const PostDetailPage = () => {
   }, [user, id, queryClient]);
 
   const commentMutation = useMutation({
-    mutationFn: ({ __tempId, ...payload }) => api.post(`/boards/community/items/${id}/comments`, payload),
+    mutationFn: ({ __tempId, ...payload }) => api.post(`/boards/${post?.boardSlug || 'community'}/items/${id}/comments`, payload),
     onMutate: async (payload) => {
       await queryClient.cancelQueries({ queryKey: ['community', 'comments', id] });
       const previousComments = queryClient.getQueryData(['community', 'comments', id]);
@@ -271,7 +276,7 @@ const PostDetailPage = () => {
   });
 
   const editCommentMutation = useMutation({
-    mutationFn: ({ commentId, content }) => api.put(`/boards/community/items/${id}/comments/${commentId}`, { content }),
+    mutationFn: ({ commentId, content }) => api.put(`/boards/${post?.boardSlug || 'community'}/items/${id}/comments/${commentId}`, { content }),
     onSuccess: () => {
       cancelEditComment();
       queryClient.invalidateQueries({ queryKey: ['community', 'comments', id] });
@@ -282,7 +287,7 @@ const PostDetailPage = () => {
   });
 
   const deletePostMutation = useMutation({
-    mutationFn: () => api.delete(`/boards/community/items/${id}`),
+    mutationFn: () => api.delete(`/boards/${post?.boardSlug || 'community'}/items/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['community'] });
       navigate('/community');
@@ -293,12 +298,27 @@ const PostDetailPage = () => {
   });
 
   const deleteCommentMutation = useMutation({
-    mutationFn: (commentId) => api.delete(`/boards/community/items/${id}/comments/${commentId}`),
+    mutationFn: (commentId) => api.delete(`/boards/${post?.boardSlug || 'community'}/items/${id}/comments/${commentId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['community', 'comments', id] });
     },
     onError: (error) => {
       setCommentError(error?.message || '댓글 삭제에 실패했습니다.');
+    }
+  });
+
+  const pinCommentMutation = useMutation({
+    mutationFn: ({ commentId, pinned }) => {
+      const slug = post?.boardSlug || 'community';
+      return pinned
+        ? api.delete(`/boards/${slug}/items/${id}/comments/${commentId}/pin`)
+        : api.post(`/boards/${slug}/items/${id}/comments/${commentId}/pin`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['community', 'comments', id] });
+    },
+    onError: (error) => {
+      setCommentError(error?.message || '댓글 고정에 실패했습니다.');
     }
   });
 
@@ -312,9 +332,11 @@ const PostDetailPage = () => {
 
     const payload = {
       content: commentInput.trim(),
-      parentSeq: null
+      parentSeq: null,
+      secretYn: isSecret ? 'Y' : 'N'
     };
     setCommentInput('');
+    setIsSecret(false);
     commentMutation.mutate(payload);
   };
 
@@ -328,10 +350,12 @@ const PostDetailPage = () => {
 
     const payload = {
       content: replyInput.trim(),
-      parentSeq: parent.id
+      parentSeq: parent.id,
+      secretYn: isReplySecret ? 'Y' : 'N'
     };
     setReplyInput('');
     setReplyTarget(null);
+    setIsReplySecret(false);
     commentMutation.mutate(payload);
   };
 
@@ -365,8 +389,8 @@ const PostDetailPage = () => {
   };
 
   const updateLikeCache = ({ targetId, likeCount, liked }) => {
-    queryClient.setQueryData(['community', 'detail', targetId], (old) => {
-      if (!old || typeof old !== 'object' || old.id !== targetId) return old;
+    queryClient.setQueryData(['community', 'detail', String(targetId)], (old) => {
+      if (!old || typeof old !== 'object') return old;
       return {
         ...old,
         likeCount,
@@ -443,7 +467,7 @@ const PostDetailPage = () => {
                         <button
                           onClick={() => {
                             setShowPostMenu(false);
-                            navigate(`/community/${id}/edit`);
+                            navigate(`/community/${id}/edit`, { state: { boardSlug: post?.boardSlug } });
                           }}
                           className="w-full px-4 py-3 text-left text-sm text-stone-700 dark:text-gray-200 hover:bg-stone-50 dark:hover:bg-gray-700 flex items-center gap-2"
                         >
@@ -492,7 +516,7 @@ const PostDetailPage = () => {
                 {post.category && (
                   <>
                     <span>•</span>
-                    <span className="font-bold text-amber-500 dark:text-amber-400">{categoryLabels[post.category] || post.category}</span>
+                    <span className="font-bold text-amber-500 dark:text-amber-400">{post.boardTitle || post.category}</span>
                   </>
                 )}
               </div>
@@ -521,8 +545,8 @@ const PostDetailPage = () => {
 
                 try {
                   const response = wasLiked
-                    ? await api.delete(`/boards/community/items/${post.id}/like`)
-                    : await api.post(`/boards/community/items/${post.id}/like`);
+                    ? await api.delete(`/boards/${post.boardSlug || 'community'}/items/${post.id}/like`)
+                    : await api.post(`/boards/${post.boardSlug || 'community'}/items/${post.id}/like`);
                   const data = response?.data || response;
                   const finalCount = typeof data === 'number' ? data : nextCount;
                   updateLikeCache({ targetId: post.id, likeCount: finalCount, liked: !wasLiked });
@@ -583,6 +607,17 @@ const PostDetailPage = () => {
                 </button>
               </div>
 
+              <label className="flex items-center gap-1.5 cursor-pointer select-none ml-1">
+                <input
+                  type="checkbox"
+                  checked={isSecret}
+                  onChange={(e) => setIsSecret(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded accent-amber-500"
+                />
+                <Lock className="w-3 h-3 text-stone-400 dark:text-gray-500" />
+                <span className="text-[11px] text-stone-400 dark:text-gray-500 font-medium">비밀글</span>
+              </label>
+
               {(commentError || commentsErrorMessage) && (
                 <p className="text-xs text-rose-500">{commentError || commentsErrorMessage}</p>
               )}
@@ -593,14 +628,18 @@ const PostDetailPage = () => {
                 <p className="text-sm text-stone-400 dark:text-gray-500">첫 댓글을 남겨주세요.</p>
               )}
 
-              {groupedComments.map((comment) => (
-                <div key={comment.id} className="py-4 border-b border-stone-100 dark:border-gray-800 group">
+              {groupedComments.map((comment) => {
+                const canViewSecret = comment.secretYn !== 'Y' || comment.isAuthor || isAuthor;
+                return (
+                <div key={comment.id} className={`py-4 border-b border-stone-100 dark:border-gray-800 group ${comment.fixYn === 'Y' ? 'bg-amber-50/50 dark:bg-amber-900/10 -mx-2 px-2 rounded-xl' : ''}`}>
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-full bg-stone-100 dark:bg-gray-800 flex items-center justify-center">
                         <User className="w-4 h-4 text-stone-300 dark:text-gray-500" />
                       </div>
                       <span className="text-sm font-bold text-stone-700 dark:text-gray-200">{comment.regUserName || '알 수 없음'}</span>
+                      {comment.fixYn === 'Y' && <Pin className="w-3 h-3 text-amber-500 fill-amber-500 rotate-45" />}
+                      {comment.secretYn === 'Y' && <Lock className="w-3 h-3 text-stone-400 dark:text-gray-500" />}
                       <span className="text-xs text-stone-400 dark:text-gray-500">{formatDate(comment.regDate)}</span>
                     </div>
                     <div
@@ -616,13 +655,23 @@ const PostDetailPage = () => {
                           <button type="button" onClick={() => retryComment(comment)}>재시도</button>
                           <button type="button" onClick={() => removeTempComment(comment.id)}>삭제</button>
                         </>
-                      ) : (
+                      ) : comment.deleteYn !== 'Y' && (
                         <>
+                          {isAuthor && !comment.parentSeq && (
+                            <button
+                              type="button"
+                              onClick={() => pinCommentMutation.mutate({ commentId: comment.id, pinned: comment.fixYn === 'Y' })}
+                              className={comment.fixYn === 'Y' ? 'text-amber-500' : ''}
+                            >
+                              {comment.fixYn === 'Y' ? '고정해제' : '고정'}
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => {
                               setReplyTarget(comment);
                               setReplyInput('');
+                              setIsReplySecret(false);
                             }}
                           >
                             답글
@@ -660,14 +709,20 @@ const PostDetailPage = () => {
                           <button type="button" onClick={cancelEditComment}>취소</button>
                         </div>
                       </div>
-                    ) : (
+                    ) : canViewSecret ? (
                       comment.content
+                    ) : (
+                      <span className="flex items-center gap-1 text-stone-400 dark:text-gray-500 italic">
+                        <Lock className="w-3.5 h-3.5" /> 비밀 댓글입니다.
+                      </span>
                     )}
                   </div>
 
                   {(comment.replies?.length > 0 || replyTarget?.id === comment.id) && (
                     <div className="mt-3 ml-10 border-l-2 border-stone-100 dark:border-gray-800 pl-4 space-y-3">
-                      {comment.replies?.map((reply) => (
+                      {comment.replies?.map((reply) => {
+                        const canViewReplySecret = reply.secretYn !== 'Y' || reply.isAuthor || isAuthor;
+                        return (
                         <div key={reply.id} className="group">
                           <div className="flex items-start justify-between gap-4">
                             <div className="flex items-center gap-2">
@@ -675,6 +730,7 @@ const PostDetailPage = () => {
                                 <User className="w-3.5 h-3.5 text-stone-300 dark:text-gray-500" />
                               </div>
                               <span className="text-xs font-bold text-stone-700 dark:text-gray-200">{reply.regUserName || '알 수 없음'}</span>
+                              {reply.secretYn === 'Y' && <Lock className="w-3 h-3 text-stone-400 dark:text-gray-500" />}
                               <span className="text-[10px] text-stone-400 dark:text-gray-500">{formatDate(reply.regDate)}</span>
                             </div>
                             <div
@@ -690,7 +746,7 @@ const PostDetailPage = () => {
                                   <button type="button" onClick={() => retryComment(reply)}>재시도</button>
                                   <button type="button" onClick={() => removeTempComment(reply.id)}>삭제</button>
                                 </>
-                              ) : (
+                              ) : reply.deleteYn !== 'Y' && (
                                 reply.isAuthor && (
                                   <>
                                     <button type="button" onClick={() => startEditComment(reply)}>수정</button>
@@ -722,12 +778,17 @@ const PostDetailPage = () => {
                                   <button type="button" onClick={cancelEditComment}>취소</button>
                                 </div>
                               </div>
-                            ) : (
+                            ) : canViewReplySecret ? (
                               reply.content
+                            ) : (
+                              <span className="flex items-center gap-1 text-stone-400 dark:text-gray-500 italic">
+                                <Lock className="w-3.5 h-3.5" /> 비밀 댓글입니다.
+                              </span>
                             )}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
 
                       {replyTarget?.id === comment.id && (
                         <div className="rounded-xl bg-white/70 dark:bg-gray-900/70 border border-stone-200 dark:border-gray-700 p-3 space-y-2">
@@ -757,12 +818,23 @@ const PostDetailPage = () => {
                               <Send className="w-4 h-4" />
                             </button>
                           </div>
+                          <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={isReplySecret}
+                              onChange={(e) => setIsReplySecret(e.target.checked)}
+                              className="w-3.5 h-3.5 rounded accent-amber-500"
+                            />
+                            <Lock className="w-3 h-3 text-stone-400 dark:text-gray-500" />
+                            <span className="text-[11px] text-stone-400 dark:text-gray-500 font-medium">비밀글</span>
+                          </label>
                         </div>
                       )}
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
 
           </div>

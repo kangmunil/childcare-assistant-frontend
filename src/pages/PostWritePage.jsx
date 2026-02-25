@@ -1,16 +1,34 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Image as ImageIcon, X } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import api from '../lib/api';
 
 const PostWritePage = () => {
   const navigate = useNavigate();
-  const [category, setCategory] = useState('');
+  const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const [boards, setBoards] = useState([]);
+  const [category, setCategory] = useState(searchParams.get('board') || '');
   const [images, setImages] = useState([]); // 이미지 미리보기용
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    const fetchBoards = async () => {
+      try {
+        const res = await api.get('/boards');
+        if (res.status === 'success' && Array.isArray(res.data)) {
+          setBoards(res.data);
+        }
+      } catch (error) {
+        console.error('게시판 목록 조회 실패:', error);
+      }
+    };
+    fetchBoards();
+  }, []);
 
   const handleImageUpload = (e) => {
     // 실제 업로드 로직 대신 미리보기 URL만 생성 (더미)
@@ -39,11 +57,14 @@ const PostWritePage = () => {
     setErrorMessage('');
 
     try {
-      await api.post('/boards/community/items', {
+      const selectedBoard = boards.find(b => b.code === category);
+      const slug = selectedBoard?.slug || category;
+      await api.post(`/boards/${slug}/items`, {
         title: title.trim(),
         content: content.trim(),
         category
       });
+      queryClient.invalidateQueries({ queryKey: ['community'] });
       navigate('/community');
     } catch (error) {
       setErrorMessage(error?.message || '글 작성에 실패했습니다.');
@@ -76,18 +97,18 @@ const PostWritePage = () => {
 
         <div className="p-6 space-y-6">
           {/* 2. 카테고리 선택 */}
-          <div className="flex gap-2">
-              {['qna', 'daily', 'tip'].map((cat) => (
+          <div className="flex gap-2 overflow-x-auto no-scrollbar">
+              {boards.map((board) => (
                   <button
-                      key={cat}
-                      onClick={() => setCategory(cat)}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                          category === cat 
-                          ? 'bg-stone-800 text-white shadow-md dark:bg-amber-500 dark:text-gray-900' 
+                      key={board.code}
+                      onClick={() => setCategory(board.code)}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                          category === board.code
+                          ? 'bg-stone-800 text-white shadow-md dark:bg-amber-500 dark:text-gray-900'
                           : 'bg-stone-50 text-stone-400 border border-stone-100 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
                       }`}
                   >
-                      {cat === 'qna' ? '질문해요' : cat === 'daily' ? '일상공유' : '육아꿀팁'}
+                      {board.title}
                   </button>
               ))}
           </div>
