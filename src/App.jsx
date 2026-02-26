@@ -66,10 +66,9 @@ const CommunityLayout = () => (
 );
 
 const ChatWindowWrapper = () => {
-    const { isChatOpen } = useStore();
     return (
         <>
-            {isChatOpen && <ChatWindow />}
+            <ChatWindow />
             <FloatingChatButton />
         </>
     );

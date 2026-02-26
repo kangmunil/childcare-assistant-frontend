@@ -3,7 +3,7 @@ import useStore from '../store/useStore';
 
 // 1. Axios 인스턴스 생성 (기지국 설정)
 // 백엔드 주소가 아직 없으면 로컬호스트(8080)를 기본값으로 둠
-const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8081';
+const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
 const client = axios.create({
   baseURL,
@@ -18,7 +18,7 @@ const client = axios.create({
 client.interceptors.request.use(
   (config) => {
     // 스토어에서 토큰 가져오기 (Zustand는 컴포넌트 밖에서도 이렇게 조회 가능!)
-    const { token } = useStore.getState(); 
+    const { token } = useStore.getState();
 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -42,27 +42,27 @@ client.interceptors.response.use(
     // 실패 시: 에러 코드별로 친절하게 대응하기
     if (error.response && error.response.data) {
       const { code, message } = error.response.data;
-      
+
       // 인증 관련 에러 3형제 처리 (강제 로그아웃)
       // AUTH_001: 권한 없음 (토큰 없음 등)
       // AUTH_008: 토큰 만료 (Time's up)
       // AUTH_009: 유효하지 않은 토큰 (위조/변조)
       if (code === 'AUTH_001' || code === 'AUTH_008' || code === 'AUTH_009') {
-        
+
         // 1. 스토어 상태 비우기 (로그아웃)
-        useStore.getState().logout(); 
-        
+        useStore.getState().logout();
+
         // 2. 사용자 알림 (만료된 경우에만 친절하게)
         if (code === 'AUTH_008') {
-             alert("로그인 시간이 만료되었습니다. 다시 로그인해주세요.");
+          alert("로그인 시간이 만료되었습니다. 다시 로그인해주세요.");
         } else if (code === 'AUTH_009') {
-             // 위조된 토큰일 경우 조용히 보내거나 보안 경고를 띄울 수 있음
-             // 여기선 일단 조용히 로그인 페이지로 보냄
+          // 위조된 토큰일 경우 조용히 보내거나 보안 경고를 띄울 수 있음
+          // 여기선 일단 조용히 로그인 페이지로 보냄
         }
 
         // 3. 로그인 페이지로 튕겨내기
-        window.location.href = '/login'; 
-        
+        window.location.href = '/login';
+
         return Promise.reject(error);
       }
 
@@ -70,7 +70,7 @@ client.interceptors.response.use(
       if (code && code.startsWith('ACCESS_')) {
         alert(message || '접근 권한이 없습니다.');
       }
-      
+
       // 그 외 에러는 콘솔에 찍어두기
       console.error(`[API Error] ${code}: ${message}`);
     } else {

@@ -2,6 +2,107 @@ import React, { useState, useCallback } from 'react';
 import { X, MapPin, Navigation, Check, AlertCircle, Loader2 } from 'lucide-react';
 import api from '../lib/api';
 
+const TARGET_ACCURACY_METERS = 80;
+const WARN_ACCURACY_METERS = 200;
+const WATCH_TIMEOUT_MS = 12000;
+const MAX_SAMPLE_COUNT = 5;
+
+const pickFirstNonEmpty = (...values) => {
+    for (const value of values) {
+        if (typeof value === 'string' && value.trim()) {
+            return value.trim();
+        }
+    }
+    return '';
+};
+
+const toGeoErrorMessage = (error) => {
+    const code = error?.code;
+    switch (code) {
+        case 1:
+            return '위치 접근 권한이 거부되었습니다. 브라우저 설정에서 위치 권한을 허용해주세요.';
+        case 2:
+            return '위치 정보를 사용할 수 없습니다. GPS/Wi-Fi 상태를 확인해주세요.';
+        case 3:
+            return '위치 정보를 가져오는 시간이 초과되었습니다.';
+        default:
+            return '위치 정보를 가져올 수 없습니다.';
+    }
+};
+
+const collectBestPosition = () =>
+    new Promise((resolve, reject) => {
+        let watchId = null;
+        let timeoutId = null;
+        let settled = false;
+        let bestPosition = null;
+        let sampleCount = 0;
+
+        const clearAll = () => {
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+            }
+            if (timeoutId !== null) {
+                window.clearTimeout(timeoutId);
+            }
+        };
+
+        const resolveOnce = (position) => {
+            if (settled) return;
+            settled = true;
+            clearAll();
+            resolve(position);
+        };
+
+        const rejectOnce = (error) => {
+            if (settled) return;
+            settled = true;
+            clearAll();
+            reject(error);
+        };
+
+        watchId = navigator.geolocation.watchPosition(
+            (position) => {
+                sampleCount += 1;
+
+                const accuracy = Number(position?.coords?.accuracy);
+                const bestAccuracy = Number(bestPosition?.coords?.accuracy);
+                const shouldReplace =
+                    !bestPosition ||
+                    (!Number.isFinite(bestAccuracy) && Number.isFinite(accuracy)) ||
+                    (Number.isFinite(accuracy) && accuracy < bestAccuracy);
+
+                if (shouldReplace) {
+                    bestPosition = position;
+                }
+
+                if ((Number.isFinite(accuracy) && accuracy <= TARGET_ACCURACY_METERS) || sampleCount >= MAX_SAMPLE_COUNT) {
+                    resolveOnce(bestPosition || position);
+                }
+            },
+            (error) => {
+                if (bestPosition) {
+                    resolveOnce(bestPosition);
+                    return;
+                }
+                rejectOnce(error);
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 0
+            }
+        );
+
+        timeoutId = window.setTimeout(() => {
+            if (bestPosition) {
+                resolveOnce(bestPosition);
+                return;
+            }
+            rejectOnce({ code: 3 });
+        }, WATCH_TIMEOUT_MS);
+    });
+
 /**
  * GPS 기반 동네 인증 모달
  * - Browser Geolocation API로 현재 위치 획득
@@ -24,71 +125,70 @@ const LocationSettingModal = ({ isOpen, onClose, onSave, currentRegionName }) =>
         setStatus('loading');
         setErrorMessage('');
 
-        navigator.geolocation.getCurrentPosition(
-            async (position) => {
-                const { latitude, longitude } = position.coords;
+        (async () => {
+            try {
+                const position = await collectBestPosition();
+                const { latitude, longitude, accuracy } = position.coords;
 
-                try {
-                    // Backend Proxy를 통해 Kakao API 호출
-                    const response = await api.get(`/geo/reverse?lat=${latitude}&lng=${longitude}`);
-                    const data = response?.data || response;
+                // Backend Proxy를 통해 Kakao API 호출
+                const response = await api.get(`/geo/reverse?lat=${latitude}&lng=${longitude}`);
+                const data = response?.data || response;
 
-                    if (data.documents && data.documents.length > 0) {
-                        const doc = data.documents[0];
-                        const roadAddr = doc.road_address;
-                        const jibunAddr = doc.address;
+                if (data.documents && data.documents.length > 0) {
+                    const doc = data.documents[0];
+                    const roadAddr = doc.road_address || {};
+                    const jibunAddr = doc.address || {};
 
-                        // 법정동 우선, 없으면 도로명 주소에서 추출
-                        const regionName = jibunAddr?.region_3depth_name ||
-                            roadAddr?.region_3depth_name ||
-                            jibunAddr?.region_2depth_name ||
-                            '알 수 없음';
+                    const regionName = pickFirstNonEmpty(
+                        data.preferredRegionName,
+                        data.legalRegionName,
+                        data.adminRegionName,
+                        jibunAddr.region_3depth_name,
+                        roadAddr.region_3depth_name,
+                        jibunAddr.region_2depth_name,
+                        '알 수 없음'
+                    );
 
-                        const fullAddress = roadAddr?.address_name || jibunAddr?.address_name || '';
-                        const postcode = roadAddr?.zone_no || '';
+                    const fullAddress = pickFirstNonEmpty(
+                        data.fullAddress,
+                        roadAddr.address_name,
+                        jibunAddr.address_name
+                    );
 
-                        setDetectedLocation({
-                            regionName,
-                            fullAddress,
-                            postcode,
-                            addr1: fullAddress,
-                            lat: latitude,
-                            lng: longitude
-                        });
-                        setStatus('confirm');
-                    } else {
-                        setErrorMessage('해당 좌표의 주소를 찾을 수 없습니다.');
-                        setStatus('error');
-                    }
-                } catch (error) {
-                    console.error('Reverse geocoding failed:', error);
-                    setErrorMessage(error?.message || '주소 변환에 실패했습니다.');
+                    const postcode = pickFirstNonEmpty(
+                        roadAddr.zone_no,
+                        jibunAddr.zip_code
+                    );
+                    const regionCode = pickFirstNonEmpty(
+                        data.legalRegionCode,
+                        data.adminRegionCode
+                    );
+
+                    const accuracyMeters = Number.isFinite(Number(accuracy))
+                        ? Math.round(Number(accuracy))
+                        : null;
+
+                    setDetectedLocation({
+                        regionName,
+                        fullAddress,
+                        postcode,
+                        addr1: fullAddress,
+                        lat: latitude,
+                        lng: longitude,
+                        accuracy: accuracyMeters,
+                        regionCode
+                    });
+                    setStatus('confirm');
+                } else {
+                    setErrorMessage('해당 좌표의 주소를 찾을 수 없습니다.');
                     setStatus('error');
                 }
-            },
-            (error) => {
-                console.error('Geolocation error:', error);
-                let msg = '위치 정보를 가져올 수 없습니다.';
-                switch (error.code) {
-                    case error.PERMISSION_DENIED:
-                        msg = '위치 접근 권한이 거부되었습니다. 브라우저 설정에서 위치 권한을 허용해주세요.';
-                        break;
-                    case error.POSITION_UNAVAILABLE:
-                        msg = '위치 정보를 사용할 수 없습니다.';
-                        break;
-                    case error.TIMEOUT:
-                        msg = '위치 정보 요청 시간이 초과되었습니다.';
-                        break;
-                }
-                setErrorMessage(msg);
+            } catch (error) {
+                console.error('Geolocation/reverse geocoding failed:', error);
+                setErrorMessage(error?.message || toGeoErrorMessage(error));
                 setStatus('error');
-            },
-            {
-                enableHighAccuracy: true,
-                timeout: 15000,
-                maximumAge: 0
             }
-        );
+        })();
     }, []);
 
     // 위치 확인 후 저장
@@ -97,12 +197,16 @@ const LocationSettingModal = ({ isOpen, onClose, onSave, currentRegionName }) =>
 
         setStatus('loading');
         try {
-            await onSave({
+            const result = await onSave({
                 postcode: detectedLocation.postcode || '',
                 addr1: detectedLocation.addr1,
                 addr2: '',
-                regionName: detectedLocation.regionName
+                regionName: detectedLocation.regionName,
+                regionCode: detectedLocation.regionCode || null
             });
+            if (result && result.success === false) {
+                throw new Error(result.message || '저장에 실패했습니다.');
+            }
             onClose();
         } catch (error) {
             setErrorMessage(error.message || '저장에 실패했습니다.');
@@ -171,7 +275,7 @@ const LocationSettingModal = ({ isOpen, onClose, onSave, currentRegionName }) =>
                     <div className="py-12 flex flex-col items-center gap-4">
                         <Loader2 className="w-12 h-12 text-amber-500 animate-spin" />
                         <p className="text-stone-600 dark:text-gray-300 font-medium">
-                            현재 위치를 확인하고 있어요...
+                            현재 위치를 여러 번 측정하고 있어요...
                         </p>
                     </div>
                 )}
@@ -188,6 +292,16 @@ const LocationSettingModal = ({ isOpen, onClose, onSave, currentRegionName }) =>
                                     <p className="text-sm text-stone-600 dark:text-gray-400 mt-1">
                                         {detectedLocation.fullAddress}
                                     </p>
+                                    {detectedLocation.accuracy != null && (
+                                        <p className="text-xs text-stone-500 dark:text-gray-400 mt-2">
+                                            위치 정확도: 약 {detectedLocation.accuracy}m
+                                        </p>
+                                    )}
+                                    {detectedLocation.accuracy != null && detectedLocation.accuracy > WARN_ACCURACY_METERS && (
+                                        <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                                            현재 정확도가 낮아요. 실외에서 다시 시도하면 더 정확해집니다.
+                                        </p>
+                                    )}
                                 </div>
                             </div>
                         </div>

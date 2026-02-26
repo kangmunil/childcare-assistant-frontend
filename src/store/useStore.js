@@ -3,6 +3,119 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { supabase } from '../api/supabase'; // [필수] Supabase 클라이언트
 import http from '../api/http'; // [필수] 백엔드 API 통신용 Axios
 
+const createInitialChatMessages = () => ([
+  { id: 1, role: 'ai', text: '안녕하세요! 육아에 대한 궁금한 점이 있으신가요?' }
+]);
+
+const resolveIntentFromText = (text) => {
+  const normalized = (text || '').replace(/\s/g, '');
+  if (!normalized) {
+    return {
+      intentHint: null,
+      requestedProfileDomains: [],
+      requiresSelectedChild: false
+    };
+  }
+
+  if (normalized.includes('성장발달')) {
+    return {
+      intentHint: 'GROWTH_CHECK',
+      requestedProfileDomains: ['growth'],
+      requiresSelectedChild: true
+    };
+  }
+
+  if (normalized.includes('백분위') || normalized.includes('성장곡선')) {
+    return {
+      intentHint: 'GROWTH_CHECK',
+      requestedProfileDomains: ['growth'],
+      requiresSelectedChild: true
+    };
+  }
+
+  if (normalized.includes('수면') || normalized.includes('낮잠') || normalized.includes('취침') || normalized.includes('기상')) {
+    return {
+      intentHint: 'SLEEP',
+      requestedProfileDomains: ['sleep', 'routine'],
+      requiresSelectedChild: false
+    };
+  }
+
+  if (normalized.includes('이유식') || normalized.includes('수유') || normalized.includes('식습관') || normalized.includes('식단') || normalized.includes('분유') || normalized.includes('먹') || normalized.includes('기입')) {
+    return {
+      intentHint: 'FEEDING',
+      requestedProfileDomains: ['feeding', 'routine'],
+      requiresSelectedChild: false
+    };
+  }
+
+  if (normalized.includes('발달') || normalized.includes('마일스톤') || normalized.includes('성향')) {
+    return {
+      intentHint: 'DEVELOPMENT',
+      requestedProfileDomains: ['development'],
+      requiresSelectedChild: false
+    };
+  }
+
+  if (normalized.includes('예방접종') || normalized.includes('백신') || normalized.includes('접종')) {
+    return {
+      intentHint: 'VACCINATION',
+      requestedProfileDomains: ['vaccination', 'medical'],
+      requiresSelectedChild: false
+    };
+  }
+
+  if (normalized.includes('루틴') || normalized.includes('일정') || normalized.includes('생활패턴')) {
+    return {
+      intentHint: 'ROUTINE',
+      requestedProfileDomains: ['routine', 'sleep'],
+      requiresSelectedChild: false
+    };
+  }
+
+  if (normalized.includes('열') || normalized.includes('증상') || normalized.includes('병원') || normalized.includes('약') || normalized.includes('알레르기') || normalized.includes('응급')) {
+    return {
+      intentHint: 'MEDICAL',
+      requestedProfileDomains: ['medical', 'allergy', 'safety'],
+      requiresSelectedChild: true
+    };
+  }
+
+  return {
+    intentHint: 'AUTO',
+    requestedProfileDomains: [],
+    requiresSelectedChild: false
+  };
+};
+
+const normalizeDomainList = (domains) => {
+  if (!Array.isArray(domains)) {
+    return [];
+  }
+  const seen = new Set();
+  return domains
+    .map((domain) => (domain || '').toLowerCase())
+    .filter((domain) => domain.trim())
+    .filter((domain) => {
+      if (seen.has(domain)) {
+        return false;
+      }
+      seen.add(domain);
+      return true;
+    });
+};
+
+const resolveRequiredChild = (intentHint, requestedProfileDomains = []) => {
+  if (intentHint === 'GROWTH_CHECK') {
+    return true;
+  }
+  if (!Array.isArray(requestedProfileDomains)) {
+    return false;
+  }
+
+  return requestedProfileDomains.includes('medical') || requestedProfileDomains.includes('allergy');
+};
+
 const useStore = create(
   persist(
     (set, get) => ({
@@ -19,8 +132,13 @@ const useStore = create(
       // 2. 챗봇 제어 상태
       // ==========================================
       isChatOpen: false,       
-      chatQuery: '',           
+      chatQuery: '',       
+      chatIntentHint: null,
+      chatRequestedProfileDomains: [],
       isAiThinking: false,
+      isAiRequestInFlight: false,
+      aiContextMode: 'AUTO',
+      manualProfileContext: '',
       aiSessionId: null,
       
       // ==========================================
@@ -71,9 +189,7 @@ const useStore = create(
         { id: 3, type: 'alert', message: '수유 텀이 4시간을 지났어요 ⏰', time: '2시간 전', isRead: true },
       ],
 
-      messages: [
-        { id: 1, role: 'ai', text: '안녕하세요! 육아에 대한 궁금한 점이 있으신가요?' }
-      ],
+      messages: createInitialChatMessages(),
 
       // ==========================================
       // 8. 액션 (API 연동 함수들)
@@ -418,31 +534,33 @@ const useStore = create(
             // 데이터가 배열인지 확인 (방어 코드)
             const childList = Array.isArray(data) ? data : (data ? [data] : []);
 
-            set({
-              children: childList,
-              childrenLoaded: true,
-              // 대표 자녀(isPrimary)가 있으면 우선 선택, 없으면 첫 번째 자녀
-              activeChildId: childList.find(c => c.isPrimary === true)?.id || childList[0]?.id || null
+            set((state) => {
+              const activeChildExists = childList.some((child) => String(child.id) === String(state.activeChildId));
+              const primaryChildId = childList.find((child) => child?.isPrimary === true)?.id ?? null;
+              const nextActiveChildId = activeChildExists
+                  ? state.activeChildId
+                  : (primaryChildId ?? (childList.length > 0 ? childList[0]?.id : null));
+              const isChildContextChanged = state.activeChildId !== nextActiveChildId;
+
+              return {
+                children: childList,
+                childrenLoaded: true,
+                // 활성화된 자녀가 없거나 목록에서 사라진 경우 대표 자녀(isPrimary) → 첫 번째 자녀 순으로 선택
+                activeChildId: nextActiveChildId,
+                aiSessionId: isChildContextChanged ? null : state.aiSessionId,
+                messages: isChildContextChanged ? createInitialChatMessages() : state.messages,
+                aiContextMode: isChildContextChanged ? 'AUTO' : state.aiContextMode,
+                manualProfileContext: isChildContextChanged ? '' : state.manualProfileContext,
+                chatQuery: isChildContextChanged ? '' : state.chatQuery,
+                isAiThinking: isChildContextChanged ? false : state.isAiThinking,
+                isAiRequestInFlight: isChildContextChanged ? false : state.isAiRequestInFlight,
+              };
             });
             console.log("✅ 자녀 목록 갱신:", childList.length, "명");
           }
         } catch (error) {
           set({ childrenLoaded: true });
           console.error("❌ 자녀 목록 조회 실패:", error);
-        }
-      },
-
-      // 4-1-1. 대표 자녀 설정 (PATCH /api/children/{childId}/primary)
-      setPrimaryChild: async (childId) => {
-        try {
-          const response = await http.patch(`/children/${childId}/primary`);
-          if (response.data.status === 'success') {
-            await get().fetchChildren();
-            return { success: true };
-          }
-          return { success: false, message: response.data.message || '대표 자녀 설정 실패' };
-        } catch (error) {
-          return { success: false, message: error.response?.data?.message || '대표 자녀 설정 중 오류가 발생했습니다.' };
         }
       },
 
@@ -461,12 +579,12 @@ const useStore = create(
             };
 
             const response = await http.post('/children', payload);
-            const { status, data, message } = response.data;
+            const { status, message } = response.data;
 
             if (status === 'success') {
-                const existingIds = new Set(get().children.map(c => c.id));
+                const existingIds = new Set(get().children.map((c) => c.id));
                 await get().fetchChildren(); // 목록 새로고침
-                const newChild = get().children.find(c => !existingIds.has(c.id));
+                const newChild = get().children.find((c) => !existingIds.has(c.id));
                 return { success: true, childId: newChild?.id, message: '자녀가 등록되었습니다.' };
             }
             return { success: false, message: message || '등록 실패' };
@@ -502,117 +620,6 @@ const useStore = create(
             return { success: false, message: message };
         } catch (error) {
             return { success: false, message: error.response?.data?.message || '삭제 실패' };
-        }
-      },
-
-      // 4-5. 자녀 이미지 업로드 (POST /api/children/{childId}/images)
-      uploadChildImage: async (childId, file) => {
-        try {
-          const formData = new FormData();
-          formData.append('file', file);
-          const response = await http.post(`/children/${childId}/images`, formData);
-          if (response.data.status === 'success') {
-            await get().fetchChildren();
-            return { success: true };
-          }
-          return { success: false, message: response.data.message };
-        } catch (error) {
-          return { success: false, message: error.response?.data?.message || '이미지 업로드 실패' };
-        }
-      },
-
-      // ==========================================
-      // [4-6] 가족 관리 API 연동
-      // ==========================================
-
-      // 자녀별 가족 구성원 조회 (GET /api/children/{childId}/family)
-      fetchFamilyMembers: async (childId) => {
-        try {
-          const response = await http.get(`/children/${childId}/family`);
-          const { status, data } = response.data;
-          if (status === 'success') {
-            return { success: true, data: data || [] };
-          }
-          return { success: false, data: [] };
-        } catch (error) {
-          console.error('가족 구성원 조회 실패:', error);
-          return { success: false, data: [] };
-        }
-      },
-
-      // 가족 공유 추가 - 공유코드 (POST /api/children/{childId}/family)
-      addFamilyMember: async (childId, inviteCode) => {
-        try {
-          const response = await http.post(`/children/${childId}/family`, { inviteCode });
-          const { status, message } = response.data;
-          if (status === 'success') {
-            await get().fetchChildren();
-            return { success: true, message: '가족이 추가되었습니다.' };
-          }
-          return { success: false, message: message || '가족 추가 실패' };
-        } catch (error) {
-          const msg = error.response?.data?.message || '가족 추가 중 오류가 발생했습니다.';
-          return { success: false, message: msg };
-        }
-      },
-
-      // 가족 공유 해제 (DELETE /api/children/{childId}/family/{memberId})
-      removeFamilyMember: async (childId, memberId) => {
-        try {
-          const response = await http.delete(`/children/${childId}/family/${memberId}`);
-          const { status, message } = response.data;
-          if (status === 'success') {
-            return { success: true, message: '가족이 해제되었습니다.' };
-          }
-          return { success: false, message: message || '가족 해제 실패' };
-        } catch (error) {
-          const msg = error.response?.data?.message || '가족 해제 중 오류가 발생했습니다.';
-          return { success: false, message: msg };
-        }
-      },
-
-      // 관계명 수정 (PUT /api/children/{childId}/family/{memberId}/relation)
-      updateFamilyRelation: async (childId, memberId, relation) => {
-        try {
-          const response = await http.put(`/children/${childId}/family/${memberId}/relation`, { relation });
-          const { status, message } = response.data;
-          if (status === 'success') {
-            return { success: true, message: '관계가 수정되었습니다.' };
-          }
-          return { success: false, message: message || '관계 수정 실패' };
-        } catch (error) {
-          const msg = error.response?.data?.message || '관계 수정 중 오류가 발생했습니다.';
-          return { success: false, message: msg };
-        }
-      },
-
-      // 공유 승인 (PUT /api/children/{childId}/family/{memberId}/approve)
-      approveFamilyMember: async (childId, memberId) => {
-        try {
-          const response = await http.put(`/children/${childId}/family/${memberId}/approve`);
-          const { status, message } = response.data;
-          if (status === 'success') {
-            return { success: true, message: '승인되었습니다.' };
-          }
-          return { success: false, message: message || '승인 실패' };
-        } catch (error) {
-          const msg = error.response?.data?.message || '승인 중 오류가 발생했습니다.';
-          return { success: false, message: msg };
-        }
-      },
-
-      // 공유 거절 (DELETE /api/children/{childId}/family/{memberId}/reject)
-      rejectFamilyMember: async (childId, memberId) => {
-        try {
-          const response = await http.delete(`/children/${childId}/family/${memberId}/reject`);
-          const { status, message } = response.data;
-          if (status === 'success') {
-            return { success: true, message: '거절되었습니다.' };
-          }
-          return { success: false, message: message || '거절 실패' };
-        } catch (error) {
-          const msg = error.response?.data?.message || '거절 중 오류가 발생했습니다.';
-          return { success: false, message: msg };
         }
       },
 
@@ -685,11 +692,39 @@ const useStore = create(
       // UI 및 기타 액션들 (기존 기능 유지)
       // ==========================================
       setActivePage: (page) => set({ activePage: page }),
-      setActiveChild: (id) => set({ activeChildId: id }),
+      setActiveChild: (id) => set((state) => {
+        if (state.activeChildId === id) {
+          return { activeChildId: id };
+        }
+
+        return {
+          activeChildId: id,
+          aiSessionId: null,
+          chatQuery: '',
+          isAiThinking: false,
+          isAiRequestInFlight: false,
+          aiContextMode: 'AUTO',
+          manualProfileContext: '',
+          messages: createInitialChatMessages(),
+        };
+      }),
       toggleChat: () => set((state) => ({ isChatOpen: !state.isChatOpen })),
-      openChatWithQuery: (query) => set({ isChatOpen: true, chatQuery: query }),
+      openChatWithQuery: (query, options = {}) => set({
+        isChatOpen: true,
+        chatQuery: query || '',
+        chatIntentHint: options.intentHint || null,
+        chatRequestedProfileDomains: normalizeDomainList(options.requestedProfileDomains),
+      }),
       setChatQuery: (query) => set({ chatQuery: query }),
       closeChat: () => set({ isChatOpen: false, chatQuery: '' }),
+      setAiContextMode: (mode) => set((state) => {
+        const nextMode = mode === 'MANUAL' ? 'MANUAL' : 'AUTO';
+        return {
+          aiContextMode: nextMode,
+          manualProfileContext: nextMode === 'MANUAL' ? state.manualProfileContext : '',
+        };
+      }),
+      setManualProfileContext: (text) => set({ manualProfileContext: text }),
       
       // (기존 dummy addChild 제거됨 -> API addChild 사용)
 
@@ -777,41 +812,118 @@ const useStore = create(
           messages: [...state.messages, { id: Date.now(), role: 'user', text }] 
       })),
       
-      generateAiResponse: async () => { 
-          set({ isAiThinking: true });
+      generateAiResponse: async () => {
+        const {
+          isAiRequestInFlight,
+          messages,
+          aiSessionId,
+          children,
+          activeChildId,
+          aiContextMode,
+          manualProfileContext,
+          chatIntentHint,
+          chatRequestedProfileDomains
+        } = get();
+        if (isAiRequestInFlight) {
+          return;
+        }
 
-          const messages = get().messages;
-          const lastUserMsg = messages[messages.length - 1]?.text?.trim();
+        const lastUserMsg = messages[messages.length - 1]?.text?.trim();
+        if (!lastUserMsg) {
+          return;
+        }
 
-          if (!lastUserMsg) {
-            set({ isAiThinking: false });
-            return;
+        set({
+          isAiThinking: true,
+          isAiRequestInFlight: true,
+        });
+
+        const contextMode = aiContextMode === 'MANUAL' ? 'MANUAL' : 'AUTO';
+        const normalizedManualContext = manualProfileContext.trim();
+        let nextSessionId = aiSessionId;
+        let replyText = 'AI 응답을 가져오지 못했어요. 잠시 후 다시 시도해주세요.';
+        const inferredIntent = resolveIntentFromText(lastUserMsg);
+        const requestedProfileDomains = normalizeDomainList(
+          chatRequestedProfileDomains && chatRequestedProfileDomains.length > 0
+            ? chatRequestedProfileDomains
+            : inferredIntent.requestedProfileDomains
+        );
+        const selectedIntent = chatIntentHint || inferredIntent.intentHint;
+        const requiresSelectedChild = resolveRequiredChild(selectedIntent, requestedProfileDomains);
+        const hasNoSelectedChild = requiresSelectedChild && !activeChildId;
+        const hasIntentHintForServer = selectedIntent && selectedIntent !== 'AUTO' ? selectedIntent : undefined;
+
+        if (hasNoSelectedChild) {
+          const requiresMedicalOrGrowth = resolveRequiredChild(selectedIntent, requestedProfileDomains);
+          replyText = children.length === 0
+            ? `${requiresMedicalOrGrowth ? '민감' : '개인화'} 정보 기반 답변은 등록된 아이가 있을 때만 가능합니다. 먼저 아이를 등록한 뒤 다시 질문해 주세요.`
+            : `${requiresMedicalOrGrowth ? '민감' : '개인화'} 기반 답변은 자녀를 선택한 뒤 이용할 수 있어요. 먼저 채팅 창 위에서 아이를 선택하고 다시 입력해 주세요.`;
+
+          set((state) => ({
+            isAiThinking: false,
+            isAiRequestInFlight: false,
+            manualProfileContext: contextMode === 'MANUAL' ? '' : state.manualProfileContext,
+            aiSessionId: nextSessionId ?? state.aiSessionId,
+            chatIntentHint: null,
+            chatRequestedProfileDomains: [],
+            messages: [...state.messages, { id: Date.now() + 1, role: 'ai', text: replyText }]
+          }));
+          return;
+        }
+
+        try {
+          const requestPayload = {
+            message: lastUserMsg,
+            session_id: aiSessionId || undefined,
+            child_id: activeChildId || undefined,
+            context_mode: contextMode,
+          };
+          if (hasIntentHintForServer) {
+            requestPayload.intent_hint = hasIntentHintForServer;
+          }
+          if (requestedProfileDomains.length > 0) {
+            requestPayload.requested_profile_domains = requestedProfileDomains;
           }
 
-          try {
-            const { aiSessionId } = get();
-            const response = await http.post('/ai/chat', {
-              message: lastUserMsg,
-              session_id: aiSessionId || undefined,
-            });
-
-            const { status, data, message } = response.data;
-            const replyText = status === 'success' && data?.reply
-              ? data.reply
-              : message || 'AI 응답을 가져오지 못했어요. 잠시 후 다시 시도해주세요.';
-
-            set((state) => ({
-              isAiThinking: false,
-              aiSessionId: data?.session_id ?? state.aiSessionId,
-              messages: [...state.messages, { id: Date.now() + 1, role: 'ai', text: replyText }]
-            }));
-          } catch (error) {
-            const errorMessage = error.response?.data?.message || 'AI 서버와 통신 중 오류가 발생했습니다.';
-            set((state) => ({
-              isAiThinking: false,
-              messages: [...state.messages, { id: Date.now() + 1, role: 'ai', text: errorMessage }]
-            }));
+          if (contextMode === 'MANUAL') {
+            requestPayload.profile_context = normalizedManualContext;
           }
+
+          const response = await http.post(
+            '/ai/chat',
+            requestPayload,
+            { timeout: 45000 }
+          );
+
+          const { status, data, message } = response.data;
+          nextSessionId = data?.session_id ?? nextSessionId;
+          replyText = status === 'success' && data?.reply
+            ? data.reply
+            : message || replyText;
+        } catch (error) {
+          const errorCode = error.response?.data?.code;
+          if (error.code === 'ECONNABORTED' || errorCode === 'AI_001_TIMEOUT') {
+            replyText = '응답이 지연되고 있어요. 잠시 후 다시 시도해주세요.';
+          } else if (errorCode === 'AI_004_UNAVAILABLE') {
+            replyText = 'AI 서버 연결이 불안정합니다. 잠시 후 다시 시도해주세요.';
+          } else if (errorCode === 'AI_002_UPSTREAM') {
+            replyText = 'AI 서비스에서 일시적인 오류가 발생했습니다. 다시 시도해주세요.';
+          } else if (errorCode === 'AI_003_BAD_REQUEST') {
+            replyText = error.response?.data?.message || '요청 형식이 올바르지 않습니다.';
+          } else {
+            replyText = error.response?.data?.message || 'AI 서버와 통신 중 오류가 발생했습니다.';
+          }
+        } finally {
+          set((state) => ({
+            isAiThinking: false,
+            isAiRequestInFlight: false,
+            manualProfileContext: contextMode === 'MANUAL' ? '' : state.manualProfileContext,
+            aiSessionId: nextSessionId ?? state.aiSessionId,
+            chatIntentHint: null,
+            chatRequestedProfileDomains: [],
+            messages: [...state.messages, { id: Date.now() + 1, role: 'ai', text: replyText }]
+          }));
+        }
       },
       
       // ==========================================
