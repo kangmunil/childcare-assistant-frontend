@@ -564,6 +564,20 @@ const useStore = create(
         }
       },
 
+      // 4-1-1. 대표 자녀 설정 (PUT /api/children/{childId}/primary)
+      setPrimaryChild: async (childId) => {
+        try {
+          const response = await http.patch(`/children/${childId}/primary`);
+          if (response.data.status === 'success') {
+            await get().fetchChildren();
+            return { success: true };
+          }
+          return { success: false, message: response.data.message || '대표 자녀 설정 실패' };
+        } catch (error) {
+          return { success: false, message: error.response?.data?.message || '대표 자녀 설정 중 오류가 발생했습니다.' };
+        }
+      },
+
       // 4-2. 자녀 등록 (POST /api/children)
       addChild: async (childData) => {
         // childData: { name, birthDay, gender ... }
