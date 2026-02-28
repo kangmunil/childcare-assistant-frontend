@@ -12,10 +12,18 @@ const api = {
   async request(endpoint, options = {}) {
     const { data: { session } } = await supabase.auth.getSession();
 
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+
     const headers = {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...options.headers,
     };
+
+    // FormData는 브라우저가 자동으로 boundary를 포함한 Content-Type을 설정해야 함
+    if (isFormData) {
+      delete headers['Content-Type'];
+      delete headers['content-type'];
+    }
 
     // 세션이 있으면 Authorization 헤더 추가
     if (session?.access_token) {
@@ -28,8 +36,12 @@ const api = {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || `API Error: ${response.status}`);
+      const errorPayload = await response.json().catch(() => ({}));
+      const error = new Error(errorPayload.message || errorPayload.error || `API Error: ${response.status}`);
+      error.code = errorPayload.code;
+      error.status = response.status;
+      error.payload = errorPayload;
+      throw error;
     }
 
     return response.json();
@@ -46,9 +58,10 @@ const api = {
    * POST 요청
    */
   post(endpoint, data) {
+    const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
     return this.request(endpoint, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: isFormData ? data : JSON.stringify(data),
     });
   },
 
@@ -56,9 +69,10 @@ const api = {
    * PUT 요청
    */
   put(endpoint, data) {
+    const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
     return this.request(endpoint, {
       method: 'PUT',
-      body: JSON.stringify(data),
+      body: isFormData ? data : JSON.stringify(data),
     });
   },
 

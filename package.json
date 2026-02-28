@@ -7,11 +7,12 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:chat-markdown": "node --test tests/chat-markdown-format.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",
-    "@tanstack/react-query": "^5.90.20",
+    "@tanstack/react-query": "^5.90.21",
     "axios": "^1.13.2",
     "framer-motion": "^12.23.26",
     "lucide-react": "^0.554.0",

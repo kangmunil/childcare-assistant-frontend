@@ -1,25 +1,31 @@
-const STORAGE_KEY = 'communityLikes';
+const STORAGE_KEY_PREFIX = 'communityLikes';
+
+const getStorageKey = (userId) => {
+  const normalizedUserId = String(userId || 'anonymous').trim() || 'anonymous';
+  return `${STORAGE_KEY_PREFIX}:${normalizedUserId}`;
+};
 
 const safeParse = (value, fallback) => {
   if (!value) return fallback;
   try {
     return JSON.parse(value);
-  } catch (error) {
+  } catch {
     return fallback;
   }
 };
 
-export const getLocalLikeMap = () => {
+export const getLocalLikeMap = (userId) => {
   if (typeof window === 'undefined') return {};
-  return safeParse(window.localStorage.getItem(STORAGE_KEY), {});
+  return safeParse(window.localStorage.getItem(getStorageKey(userId)), {});
 };
 
-export const setLocalLike = (postId, liked) => {
+export const setLocalLike = (userId, postId, liked) => {
   if (typeof window === 'undefined') return;
-  const current = getLocalLikeMap();
+  const storageKey = getStorageKey(userId);
+  const current = getLocalLikeMap(userId);
   const next = {
     ...current,
     [postId]: !!liked,
   };
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  window.localStorage.setItem(storageKey, JSON.stringify(next));
 };

@@ -133,11 +133,43 @@ const DashboardPage = () => {
     };
   });
 
+  const childDisplayName = currentChild?.name || '아이';
   const quickActions = [
-    { label: "예방접종 확인", icon: "💉", query: `${currentChild.name}의 다음 예방접종 시기 언제야?` },
-    { label: "발달 특성", icon: "👶", query: `${currentChild.name} 개월 수에 맞는 발달 특성 알려줘` },
-    { label: "수면 교육", icon: "💤", query: "지금 시기 수면 교육 어떻게 해야 해?" },
-    { label: "이유식 가이드", icon: "🍼", query: "지금 월령에 맞는 이유식 식단 추천해줘" }
+    {
+      label: "예방접종 확인",
+      icon: "💉",
+      query: `${childDisplayName}의 다음 예방접종 시기 언제야?`,
+      intentHint: "VACCINATION",
+      requestedProfileDomains: ["vaccination", "medical"]
+    },
+    {
+      label: "발달 특성",
+      icon: "👶",
+      query: `${childDisplayName} 개월 수에 맞는 발달 특성 알려줘`,
+      intentHint: "DEVELOPMENT",
+      requestedProfileDomains: ["development"]
+    },
+    {
+      label: "성장발달 확인",
+      icon: "📈",
+      query: "아이 성장발달 확인해줘",
+      intentHint: "GROWTH_CHECK",
+      requestedProfileDomains: ["growth"]
+    },
+    {
+      label: "수면 교육",
+      icon: "💤",
+      query: "지금 시기 수면 패턴 어떻게 잡아야 해?",
+      intentHint: "SLEEP",
+      requestedProfileDomains: ["sleep", "routine"]
+    },
+    {
+      label: "이유식 가이드",
+      icon: "🍼",
+      query: "지금 아이 나이(개월)에 맞는 이유식 식단 추천해줘",
+      intentHint: "FEEDING",
+      requestedProfileDomains: ["feeding", "routine"]
+    }
   ];
 
   const getDays = (dateString) => {
@@ -257,7 +289,15 @@ const DashboardPage = () => {
                   {/* 아기 아바타 (사이즈 약간 축소) */}
                   <div className="relative">
                       <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full border-2 border-white/40 flex items-center justify-center overflow-hidden">
-                          <img src={currentChild.photo} alt="baby" className="w-full h-full object-cover" />
+                          {currentChild.photoUrl ? (
+                              <img
+                                src={currentChild.photoUrl}
+                                alt="baby"
+                                className="w-full h-full object-cover"
+                                onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = ''; }}
+                              />
+                          ) : null}
+                          <span className="text-white text-lg" style={currentChild.photoUrl ? {display:'none'} : {}}>👶</span>
                       </div>
                       {/* 상태 뱃지 (심플하게) */}
                       <div className={`absolute -bottom-1 -right-1 px-1.5 py-0.5 ${currentStatusInfo.color} border border-white rounded-full flex items-center shadow-sm`}>
@@ -297,10 +337,13 @@ const DashboardPage = () => {
       {/* 2. [수정됨] 퀵 액션 (키워드) 버튼 - 더 심플하고 작게 변경 */}
       <div className="flex gap-2 overflow-x-auto no-scrollbar mb-6 px-1 -mx-1">
         {quickActions.map((action, idx) => (
-            <button 
+                <button 
                 key={idx}
                 className="whitespace-nowrap bg-white border border-stone-100 text-stone-600 px-3 py-2 rounded-xl text-[11px] font-bold shadow-sm hover:border-amber-200 hover:text-amber-600 hover:bg-amber-50 transition-all flex items-center gap-1.5 active:scale-95"
-                onClick={() => openChatWithQuery(action.query)} 
+                onClick={() => openChatWithQuery(action.query, {
+                  intentHint: action.intentHint,
+                  requestedProfileDomains: action.requestedProfileDomains
+                })} 
             >
                 <span className="text-sm">{action.icon}</span>
                 {action.label}

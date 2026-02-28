@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Clock, Trash2, Milk, Moon, Activity, Droplet, Baby, Utensils, Heart, BarChart3, FileText, Save, ChevronDown } from 'lucide-react';
+import { Plus, Clock, Trash2, Milk, Moon, Activity, Droplet, Baby, Utensils, Heart, BarChart3, FileText, Save } from 'lucide-react';
 import useStore from '../store/useStore';
 import TrackerCard from '../components/TrackerCard';
 import DiaryStatsModal from '../components/DiaryStatsModal';
@@ -32,7 +32,6 @@ const DiaryPage = () => {
     children,
     childrenLoaded,
     activeChildId,
-    setActiveChild,
     diaryItems,
     diaryItemsLoaded,
     summaryValues,
@@ -59,8 +58,6 @@ const DiaryPage = () => {
   const [isStatsOpen, setIsStatsOpen] = useState(false);
   const [memo, setMemo] = useState(null);
   const [memoContent, setMemoContent] = useState('');
-  const [isChildMenuOpen, setIsChildMenuOpen] = useState(false);
-  const childMenuRef = useRef(null);
   const [savingMemo, setSavingMemo] = useState(false);
 
   const currentChild = children.find(c => c.id === activeChildId) || children[0];
@@ -75,7 +72,6 @@ const DiaryPage = () => {
   // 자녀 변경 시 선택 항목 리셋
   useEffect(() => {
     setSelectedItemId(null);
-    setIsChildMenuOpen(false);
   }, [activeChildId]);
 
   // 자녀/날짜 변경 시 데이터 조회
@@ -103,23 +99,6 @@ const DiaryPage = () => {
     const now = new Date();
     setInputTime(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
   }, []);
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (!childMenuRef.current) return;
-      if (!childMenuRef.current.contains(event.target)) {
-        setIsChildMenuOpen(false);
-      }
-    };
-
-    if (isChildMenuOpen) {
-      window.addEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      window.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isChildMenuOpen]);
 
   const loadLogs = async () => {
     if (!currentChild?.id) return;
@@ -243,49 +222,15 @@ const DiaryPage = () => {
       />
 
       {/* 헤더 */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-1">
-        <div className="flex items-center gap-2">
-          <h2 className="text-xl font-bold text-gray-800 dark:text-white">하루 일지</h2>
-          <div ref={childMenuRef} className="relative">
-            <button
-              type="button"
-              onClick={() => setIsChildMenuOpen((prev) => !prev)}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
-              <span>{currentChild?.name || '아이'}</span>
-              <ChevronDown className={`w-4 h-4 transition-transform ${isChildMenuOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {isChildMenuOpen && (
-              <div className="absolute left-0 mt-2 w-48 rounded-2xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg p-2 z-20">
-                {children.map((child) => (
-                  <button
-                    key={child.id}
-                    type="button"
-                    onClick={() => {
-                      setActiveChild(child.id);
-                      setIsChildMenuOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
-                      child.id === currentChild?.id
-                        ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-                        : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
-                    }`}
-                  >
-                    <span>{child.name}</span>
-                    {child.id === currentChild?.id && (
-                      <span className="text-xs font-bold text-amber-600 dark:text-amber-300">선택됨</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 px-2 shrink-0">
+        <div>
+          <h2 className="text-2xl font-black text-gray-800 dark:text-white">하루 일지</h2>
+          <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">오늘 하루를 기록해보세요</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsStatsOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 rounded-xl font-medium text-sm hover:bg-indigo-200 dark:hover:bg-indigo-900 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl font-medium text-sm hover:bg-indigo-700 transition-colors"
           >
             <BarChart3 className="w-4 h-4" />
             통계
@@ -297,7 +242,7 @@ const DiaryPage = () => {
             className="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl font-medium text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-amber-400"
           />
         </div>
-      </div>
+      </header>
 
       <div className="flex-1 overflow-y-auto min-h-0 pr-1 custom-scrollbar">
         <div className="flex flex-col lg:grid lg:grid-cols-12 gap-6">
@@ -355,7 +300,7 @@ const DiaryPage = () => {
                 <button
                   onClick={handleSaveMemo}
                   disabled={savingMemo || !memoContent.trim()}
-                  className="px-4 py-1.5 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors disabled:bg-gray-300 dark:disabled:bg-gray-600 flex items-center gap-1"
+                  className="px-4 py-1.5 text-xs font-bold text-white bg-gray-800 dark:bg-amber-500 dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-amber-600 rounded-lg transition-colors flex items-center gap-1"
                 >
                   {savingMemo ? '저장 중...' : (memo?.id ? '수정' : '저장')}
                 </button>
@@ -395,7 +340,7 @@ const DiaryPage = () => {
                 <button
                   onClick={handleAddLog}
                   disabled={!inputAmount || saving}
-                  className={`${accent.btn} disabled:bg-gray-200 dark:disabled:bg-gray-600 text-white p-3.5 rounded-xl shadow-lg disabled:shadow-none transition-all active:scale-95`}
+                  className="bg-gray-800 dark:bg-amber-500 text-white dark:text-gray-900 p-3.5 rounded-xl shadow-lg transition-all active:scale-95"
                 >
                   {saving ? <Clock className="w-6 h-6 animate-spin" /> : <Plus className="w-6 h-6" />}
                 </button>

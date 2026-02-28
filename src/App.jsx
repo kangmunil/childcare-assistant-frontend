@@ -14,6 +14,7 @@ import SignupPage from './pages/SignupPage';
 import CommunityPage from './pages/CommunityPage';
 import PostWritePage from './pages/PostWritePage';
 import PostDetailPage from './pages/PostDetailPage';
+import PostEditPage from './pages/PostEditPage';
 import ChildSetupPage from './pages/ChildSetupPage';
 import AuthCallbackPage from './pages/AuthCallbackPage';
 import DiaryPage from './pages/DiaryPage'; 
@@ -65,10 +66,9 @@ const CommunityLayout = () => (
 );
 
 const ChatWindowWrapper = () => {
-    const { isChatOpen } = useStore();
     return (
         <>
-            {isChatOpen && <ChatWindow />}
+            <ChatWindow />
             <FloatingChatButton />
         </>
     );
@@ -103,9 +103,10 @@ function App() {
         <Route path="/community" element={<CommunityLayout />}>
             <Route index element={<CommunityPage />} />
             <Route path="write" element={<PostWritePage />} />
+            <Route path=":id/edit" element={<PostEditPage />} />
             <Route path=":id" element={<PostDetailPage />} />
         </Route>
-        
+
         <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

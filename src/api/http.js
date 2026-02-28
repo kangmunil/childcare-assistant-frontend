@@ -8,11 +8,27 @@ const http = axios.create({
 
 // 요청 인터셉터: Supabase 세션 토큰을 헤더에 추가
 http.interceptors.request.use(async (config) => {
+  const isAiChatRequest = typeof config.url === 'string' && config.url.includes('/ai/chat');
+  if (isAiChatRequest && (!config.timeout || config.timeout < 45000)) {
+    config.timeout = 45000;
+  }
+  if (isAiChatRequest) {
+    config.headers = config.headers || {};
+    if (!config.headers['X-Request-Id']) {
+      const fallbackId = `req-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+      config.headers['X-Request-Id'] =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : fallbackId;
+    }
+  }
+
   try {
     // Supabase에서 현재 세션 가져오기
     const { data: { session } } = await supabase.auth.getSession();
 
     if (session?.access_token) {
+      config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${session.access_token}`;
     }
   } catch (error) {

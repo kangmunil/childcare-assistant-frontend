@@ -123,11 +123,11 @@ const CalendarPage = () => {
   };
 
   return (
-    <div className="h-full flex flex-col gap-6">
+    <div className="pb-24 pt-6 px-4 h-full overflow-y-auto flex flex-col gap-6">
       {/* 1. 일정 입력 모달 */}
-      <CalendarInputModal 
-        isOpen={isInputModalOpen} 
-        onClose={() => setIsInputModalOpen(false)} 
+      <CalendarInputModal
+        isOpen={isInputModalOpen}
+        onClose={() => setIsInputModalOpen(false)}
         onSave={handleSaveEvent}
         selectedDate={selectedDate}
       />
@@ -141,24 +141,24 @@ const CalendarPage = () => {
         onUpdate={handleUpdateEvent}
       />
 
-      <header className="flex justify-between items-center px-2">
+      <header className="flex justify-between items-center">
         <div>
-            <h2 className="text-2xl font-black text-gray-800">육아 캘린더</h2>
-            <p className="text-gray-500 text-sm font-medium">중요한 일정을 놓치지 마세요!</p>
+            <h1 className="text-2xl font-black text-gray-800 dark:text-white">육아 캘린더</h1>
+            <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">중요한 일정을 놓치지 마세요!</p>
         </div>
-        <div className="flex items-center gap-4 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
-            <button onClick={prevMonth} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><ChevronLeft className="w-5 h-5 text-gray-600" /></button>
-            <span className="text-lg font-bold text-gray-800 w-24 text-center">{year}. {month + 1}</span>
-            <button onClick={nextMonth} className="p-2 hover:bg-gray-100 rounded-xl transition-colors"><ChevronRight className="w-5 h-5 text-gray-600" /></button>
+        <div className="flex items-center bg-white dark:bg-gray-800 p-2 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+            <button onClick={prevMonth} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"><ChevronLeft className="w-4 h-4 text-gray-600 dark:text-gray-300" /></button>
+            <span className="text-sm font-bold text-gray-800 dark:text-gray-200 w-20 text-center">{year}. {month + 1}</span>
+            <button onClick={nextMonth} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"><ChevronRight className="w-4 h-4 text-gray-600 dark:text-gray-300" /></button>
         </div>
       </header>
 
       <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-0">
         {/* 달력 그리드 */}
-        <div className="flex-1 bg-white/70 backdrop-blur-xl rounded-[2.5rem] border border-white/40 shadow-sm p-6 flex flex-col">
+        <div className="flex-1 bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-[2.5rem] border border-white/40 dark:border-gray-700 shadow-sm p-6 flex flex-col">
             <div className="grid grid-cols-7 mb-4">
                 {['일', '월', '화', '수', '목', '금', '토'].map((d, i) => (
-                    <div key={d} className={`text-center text-sm font-bold ${i === 0 ? 'text-rose-400' : 'text-gray-400'}`}>{d}</div>
+                    <div key={d} className={`text-center text-sm font-bold ${i === 0 ? 'text-rose-400' : 'text-gray-400 dark:text-gray-500'}`}>{d}</div>
                 ))}
             </div>
             <div className="grid grid-cols-7 flex-1 auto-rows-fr gap-2">
@@ -173,9 +173,9 @@ const CalendarPage = () => {
                         <div 
                             key={i} 
                             onClick={() => setSelectedDate(date)}
-                            className={`relative rounded-2xl p-2 cursor-pointer transition-all border flex flex-col items-center justify-start pt-3 gap-1 ${isSelected ? 'bg-amber-100 border-amber-300 shadow-md ring-2 ring-amber-100 scale-105 z-10' : 'bg-white/50 border-transparent hover:bg-white hover:border-gray-200 hover:shadow-sm'}`}
+                            className={`relative rounded-2xl p-2 cursor-pointer transition-all border flex flex-col items-center justify-start pt-3 gap-1 ${isSelected ? 'bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-700 shadow-md ring-2 ring-amber-100 dark:ring-amber-800 scale-105 z-10' : 'bg-white/50 dark:bg-gray-700/50 border-transparent hover:bg-white dark:hover:bg-gray-700 hover:border-gray-200 dark:hover:border-gray-600 hover:shadow-sm'}`}
                         >
-                            <span className={`text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full ${isToday ? 'bg-gray-800 text-white' : isSelected ? 'text-amber-700' : 'text-gray-600'}`}>
+                            <span className={`text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full ${isToday ? 'bg-gray-800 dark:bg-white text-white dark:text-gray-800' : isSelected ? 'text-amber-700 dark:text-amber-300' : 'text-gray-600 dark:text-gray-300'}`}>
                                 {date.getDate()}
                             </span>
                             <div className="flex gap-1 mt-1">
@@ -191,17 +191,17 @@ const CalendarPage = () => {
 
         {/* 우측 패널 */}
         <div className="lg:w-96 flex flex-col gap-6">
-            <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 h-full flex flex-col">
+            <div className="bg-white dark:bg-gray-800 rounded-[2rem] p-6 shadow-sm border border-gray-100 dark:border-gray-700 h-full flex flex-col">
                 <div className="flex justify-between items-end mb-6">
                     <div>
-                        <p className="text-gray-400 text-sm font-bold uppercase tracking-wider">
+                        <p className="text-gray-400 dark:text-gray-500 text-sm font-bold uppercase tracking-wider">
                             Selected Date
                         </p>
-                        <h3 className="text-3xl font-black text-gray-800 mt-1">
-                            {selectedDate.getDate()}일 <span className="text-lg font-bold text-gray-400 ml-2">{['일','월','화','수','목','금','토'][selectedDate.getDay()]}요일</span>
+                        <h3 className="text-3xl font-black text-gray-800 dark:text-white mt-1">
+                            {selectedDate.getDate()}일 <span className="text-lg font-bold text-gray-400 dark:text-gray-500 ml-2">{['일','월','화','수','목','금','토'][selectedDate.getDay()]}요일</span>
                         </h3>
                     </div>
-                    <button onClick={() => setIsInputModalOpen(true)} className="bg-gray-800 text-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-gray-700 transition-colors shadow-lg hover:scale-110 active:scale-95">
+                    <button onClick={() => setIsInputModalOpen(true)} className="bg-gray-800 dark:bg-amber-500 text-white dark:text-gray-900 w-10 h-10 rounded-full flex items-center justify-center hover:bg-gray-700 dark:hover:bg-amber-600 transition-colors shadow-lg hover:scale-110 active:scale-95">
                         <Plus className="w-5 h-5" />
                     </button>
                 </div>
@@ -213,18 +213,18 @@ const CalendarPage = () => {
                             <div
                                 key={event.id}
                                 onClick={() => handleEventClick(event)}
-                                className="group flex items-start gap-4 p-4 rounded-2xl border border-gray-100 hover:border-amber-200 hover:bg-amber-50/50 transition-all cursor-pointer bg-gray-50/50"
+                                className="group flex items-start gap-4 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 hover:border-amber-200 dark:hover:border-amber-700 hover:bg-amber-50/50 dark:hover:bg-amber-900/20 transition-all cursor-pointer bg-gray-50/50 dark:bg-gray-700/50"
                             >
-                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm bg-white ${event.type === 'hospital' ? 'text-rose-500' : event.type === 'event' ? 'text-purple-500' : 'text-amber-500'}`}>
+                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm bg-white dark:bg-gray-800 ${event.type === 'hospital' ? 'text-rose-500' : event.type === 'event' ? 'text-purple-500' : 'text-amber-500'}`}>
                                     {getIcon(event.type)}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-0.5">
-                                        <span className="text-xs font-bold text-gray-400 bg-white px-2 py-0.5 rounded-md border border-gray-100">{event.time}</span>
+                                        <span className="text-xs font-bold text-gray-400 dark:text-gray-500 bg-white dark:bg-gray-800 px-2 py-0.5 rounded-md border border-gray-100 dark:border-gray-600">{event.time}</span>
                                         {event.type === 'hospital' && <span className="text-[10px] font-bold text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded">병원</span>}
                                     </div>
-                                    <h4 className="font-bold text-gray-800 truncate">{event.title}</h4>
-                                    <div className="flex items-center gap-1 mt-1 text-xs text-gray-400"><MapPin className="w-3 h-3" />{event.location || '장소 미정'}</div>
+                                    <h4 className="font-bold text-gray-800 dark:text-white truncate">{event.title}</h4>
+                                    <div className="flex items-center gap-1 mt-1 text-xs text-gray-400 dark:text-gray-500"><MapPin className="w-3 h-3" />{event.location || '장소 미정'}</div>
                                 </div>
                                 <button
                                     onClick={(e) => {
@@ -233,14 +233,14 @@ const CalendarPage = () => {
                                         handleDeleteEvent(event.id);
                                       }
                                     }}
-                                    className="p-2 rounded-full text-gray-300 hover:text-rose-500 hover:bg-rose-50 transition-colors shrink-0"
+                                    className="p-2 rounded-full text-gray-300 dark:text-gray-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors shrink-0"
                                 >
                                     <Trash2 className="w-4 h-4" />
                                 </button>
                             </div>
                         ))
                     ) : (
-                        <div className="h-40 flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-100 rounded-2xl bg-gray-50/30">
+                        <div className="h-40 flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 border-2 border-dashed border-gray-100 dark:border-gray-700 rounded-2xl bg-gray-50/30 dark:bg-gray-700/30">
                             <Cake className="w-8 h-8 mb-2 opacity-20" />
                             <p className="text-sm font-medium">등록된 일정이 없어요</p>
                         </div>
