@@ -29,6 +29,22 @@ const CATEGORIES = {
   neighbor: ['urgent', 'local_info', 'local_review', 'local_gathering', 'local_share']
 };
 
+const getPostScopeBadgeMeta = (postScope) => {
+  if (String(postScope || '').toLowerCase() === 'neighbor') {
+    return {
+      label: '동네생활',
+      Icon: MapPin,
+      className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+    };
+  }
+
+  return {
+    label: '육아광장',
+    Icon: Globe,
+    className: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
+  };
+};
+
 const CommunityPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -37,6 +53,7 @@ const CommunityPage = () => {
   const sizeParam = Math.max(1, Number(searchParams.get('size')) || 20);
   const activeTab = searchParams.get('tab') || 'all';
   const queryParam = searchParams.get('query') || '';
+  const sortParamRaw = searchParams.get('sort');
   const searchParamsKey = searchParams.toString();
 
   const [searchInput, setSearchInput] = useState(queryParam);
@@ -63,10 +80,11 @@ const CommunityPage = () => {
   const locationScope = locationScopeParam === 'neighbor' || locationScopeParam === 'all'
     ? locationScopeParam
     : (hasUserLocation ? 'neighbor' : 'all');
+  const sort = locationScope === 'all' && sortParamRaw === 'popular' ? 'popular' : 'latest';
   const userRegionLabels = useMemo(() => getRegionLabels(user?.regionName), [user?.regionName]);
   const isNeighborScopeBlocked = locationScope === 'neighbor' && !hasUserLocation;
 
-  const queryKey = ['community', 'list', locationScope, activeTab, queryParam.trim(), pageParam, sizeParam];
+  const queryKey = ['community', 'list', locationScope, sort, activeTab, queryParam.trim(), pageParam, sizeParam];
 
   const {
     data,
@@ -82,6 +100,9 @@ const CommunityPage = () => {
         params.set('category', activeTab);
       }
       params.set('locationScope', locationScope);
+      if (locationScope === 'all') {
+        params.set('sort', sort);
+      }
       params.set('page', String(pageParam - 1));
       params.set('size', String(sizeParam));
       params.set('includeHighlights', 'false');
@@ -98,7 +119,37 @@ const CommunityPage = () => {
     placeholderData: keepPreviousData
   });
 
+  const showUrgentSlot = locationScope === 'neighbor' && activeTab === 'all' && !queryParam.trim();
+  const { data: urgentSlotData } = useQuery({
+    queryKey: ['community', 'urgent-slot', locationScope],
+    queryFn: async ({ signal }) => {
+      const params = new URLSearchParams();
+      params.set('locationScope', 'neighbor');
+      params.set('category', 'urgent');
+      params.set('page', '0');
+      params.set('size', '1');
+      params.set('includeHighlights', 'false');
+      params.set('urgentSlot', 'true');
+      const response = await api.get(`/boards/community/items?${params.toString()}`, { signal });
+      return response?.data || response || {};
+    },
+    enabled: showUrgentSlot && !isNeighborScopeBlocked,
+    staleTime: 1000 * 30,
+    gcTime: 1000 * 60 * 10,
+  });
+
   const posts = useMemo(() => (Array.isArray(data?.items) ? data.items : []), [data?.items]);
+  const urgentSlotPosts = useMemo(
+    () => (Array.isArray(urgentSlotData?.items) ? urgentSlotData.items : []),
+    [urgentSlotData?.items]
+  );
+  const visiblePosts = useMemo(() => {
+    if (!showUrgentSlot || urgentSlotPosts.length === 0) return posts;
+    const urgentIds = new Set(urgentSlotPosts.map((post) => String(post.id)));
+    return posts.filter((post) => !urgentIds.has(String(post.id)));
+  }, [posts, showUrgentSlot, urgentSlotPosts]);
+  const hasUrgentSlot = showUrgentSlot && urgentSlotPosts.length > 0;
+  const hasVisiblePosts = visiblePosts.length > 0;
   const pagination = useMemo(() => ({
     totalPages: data?.totalPages ?? 0,
     currentPage: data?.currentPage ?? 0,
@@ -117,8 +168,14 @@ const CommunityPage = () => {
   }, [searchParams]);
 
   const applyLocationScope = useCallback((nextScope, { replace = true } = {}) => {
+    const normalizedScope = nextScope === 'neighbor' ? 'neighbor' : 'all';
     const nextParams = new URLSearchParams(searchParamsRef.current);
-    nextParams.set('locationScope', nextScope === 'neighbor' ? 'neighbor' : 'all');
+    nextParams.set('locationScope', normalizedScope);
+    if (normalizedScope === 'neighbor') {
+      nextParams.delete('sort');
+    } else if (!nextParams.get('sort')) {
+      nextParams.set('sort', 'latest');
+    }
     nextParams.delete('page');
     setSearchParams(nextParams, { replace });
   }, [setSearchParams]);
@@ -127,6 +184,24 @@ const CommunityPage = () => {
     if (locationScopeParam === locationScope) return;
     applyLocationScope(locationScope, { replace: true });
   }, [locationScope, locationScopeParam, applyLocationScope]);
+
+  useEffect(() => {
+    const currentSort = searchParamsRef.current.get('sort');
+    if (locationScope !== 'all') {
+      if (currentSort != null) {
+        const nextParams = new URLSearchParams(searchParamsRef.current);
+        nextParams.delete('sort');
+        setSearchParams(nextParams, { replace: true });
+      }
+      return;
+    }
+
+    if (currentSort !== 'latest' && currentSort !== 'popular') {
+      const nextParams = new URLSearchParams(searchParamsRef.current);
+      nextParams.set('sort', 'latest');
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [locationScope, setSearchParams]);
 
   useEffect(() => {
     const root = containerRef.current;
@@ -334,6 +409,17 @@ const CommunityPage = () => {
     applyLocationScope(nextScope, { replace: true });
   };
 
+  const handleSelectSort = (nextSort) => {
+    if (locationScope !== 'all') return;
+    const normalizedSort = nextSort === 'popular' ? 'popular' : 'latest';
+    if (sort === normalizedSort) return;
+
+    const nextParams = new URLSearchParams(searchParamsRef.current);
+    nextParams.set('sort', normalizedSort);
+    nextParams.delete('page');
+    setSearchParams(nextParams, { replace: true });
+  };
+
   return (
     <div ref={containerRef} className="min-h-screen pb-24 md:pb-0 relative">
       {/* 1. 헤더 & 검색 */}
@@ -448,6 +534,31 @@ const CommunityPage = () => {
             )
           })}
         </div>
+        {locationScope === 'all' && (
+          <div className="flex items-center gap-2 mt-3">
+            <span className="text-[11px] font-semibold text-stone-500 dark:text-gray-400">정렬</span>
+            <button
+              type="button"
+              onClick={() => handleSelectSort('latest')}
+              className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors ${sort === 'latest'
+                ? 'bg-stone-800 text-white border-stone-800 dark:bg-amber-500 dark:text-gray-900 dark:border-amber-500'
+                : 'bg-white text-stone-600 border-stone-300 hover:bg-stone-100 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700'
+                }`}
+            >
+              최신순
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectSort('popular')}
+              className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors ${sort === 'popular'
+                ? 'bg-stone-800 text-white border-stone-800 dark:bg-amber-500 dark:text-gray-900 dark:border-amber-500'
+                : 'bg-white text-stone-600 border-stone-300 hover:bg-stone-100 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700'
+                }`}
+            >
+              인기순
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 2. 게시글 리스트 */}
@@ -510,11 +621,52 @@ const CommunityPage = () => {
               <span className="inline-block h-4 w-4 border-2 border-stone-300 dark:border-gray-500 border-t-transparent rounded-full animate-spin mr-2 align-[-2px]" />
               게시글을 불러오는 중이에요...
             </div>
-          ) : posts.length > 0 ? (
-            posts.map((post) => {
+          ) : hasVisiblePosts || hasUrgentSlot ? (
+            <>
+              {hasUrgentSlot && (
+                <section className="rounded-3xl border border-rose-200 dark:border-rose-800/50 bg-rose-50 dark:bg-rose-900/10 p-4 lg:p-5 shadow-sm">
+                  <div className="flex items-center gap-2 mb-3">
+                    <AlertCircle className="w-4 h-4 text-rose-500 animate-pulse" />
+                    <h3 className="text-sm font-extrabold text-rose-700 dark:text-rose-300">긴급/SOS (최근 2시간)</h3>
+                  </div>
+                  <div className="space-y-2">
+                    {urgentSlotPosts.map((post) => {
+                      const postRegionDongLabel = post.regUserRegionDongLabel || getRegionLabels(post.regUserRegionName).dongLabel;
+                      return (
+                        <button
+                          key={`urgent-slot-${post.id}`}
+                          type="button"
+                          onClick={() => handleOpenPost(post.id, post.boardSlug)}
+                          className="w-full text-left rounded-2xl border border-rose-200/80 dark:border-rose-800/40 bg-white/90 dark:bg-gray-800/70 px-3 py-2.5 hover:bg-white dark:hover:bg-gray-800 transition-colors"
+                        >
+                          <p className="text-sm font-bold text-stone-900 dark:text-gray-100 line-clamp-1">{post.title}</p>
+                          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-stone-500 dark:text-gray-400">
+                            <span>{formatRelativeTime(post.regDate)}</span>
+                            {postRegionDongLabel && (
+                              <>
+                                <span>•</span>
+                                <span className="inline-flex items-center gap-1">
+                                  <MapPin className="w-3 h-3 text-rose-400 dark:text-rose-500" />
+                                  {postRegionDongLabel}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+
+            {visiblePosts.map((post) => {
               const imageError = imageLoadErrorMap[String(post.id)];
               const hasThumbnail = Boolean(post.thumbnailUrl) && !imageError;
+              const hasThumbnailVariants = Boolean(
+                post.thumbnailAvifUrl || post.thumbnailWebpUrl || post.thumbnailJpegUrl || post.thumbnailPngUrl
+              );
               const postRegionDongLabel = post.regUserRegionDongLabel || getRegionLabels(post.regUserRegionName).dongLabel;
+              const postScopeBadge = getPostScopeBadgeMeta(post.postScope);
 
               return (
                 <article
@@ -544,13 +696,13 @@ const CommunityPage = () => {
                         </div>
                         <div>
                           <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                            <span className="text-sm font-semibold text-stone-800 dark:text-gray-100">{post.regUserName || '알 수 없음'}</span>
                             {post.sameNeighborhood && (
                               <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-stone-900 dark:bg-amber-500 dark:text-gray-900 shadow-sm">
                                 <MapPin className="w-3 h-3" />
                                 인증이웃
                               </span>
                             )}
-                            <span className="text-sm font-semibold text-stone-800 dark:text-gray-100">{post.regUserName || '알 수 없음'}</span>
                             {post.regUserHonorNeighbor && (
                               <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-gradient-to-r from-amber-200 to-yellow-400 text-stone-900 shadow-sm">
                                 <Crown className="w-3 h-3 text-amber-700" />
@@ -588,32 +740,38 @@ const CommunityPage = () => {
                           </div>
                         </div>
                       </div>
-                      {post.category && (() => {
-                        const meta = categoryMeta[post.category];
-                        const Icon = meta?.icon || (post.category === 'hospital' ? Building2 : Coffee);
-                        const label = meta?.label || (post.category === 'hospital' ? '병원/기관' : post.category);
+                      <div className="flex items-center justify-end gap-1.5 flex-wrap shrink-0">
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full ${postScopeBadge.className}`}>
+                          <postScopeBadge.Icon className="w-3 h-3" strokeWidth={2.5} />
+                          {postScopeBadge.label}
+                        </span>
+                        {post.category && (() => {
+                          const meta = categoryMeta[post.category];
+                          const Icon = meta?.icon || (post.category === 'hospital' ? Building2 : Coffee);
+                          const label = meta?.label || (post.category === 'hospital' ? '병원/기관' : post.category);
 
-                        if (post.category === 'urgent') {
+                          if (post.category === 'urgent') {
+                            return (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full bg-rose-500 text-white shadow-[0_0_8px_rgba(244,63,94,0.6)] dark:shadow-[0_0_12px_rgba(244,63,94,0.5)]">
+                                <AlertCircle className="w-3 h-3" />
+                                긴급/SOS
+                              </span>
+                            );
+                          }
+
                           return (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full bg-rose-500 text-white shadow-[0_0_8px_rgba(244,63,94,0.6)] dark:shadow-[0_0_12px_rgba(244,63,94,0.5)]">
-                              <AlertCircle className="w-3 h-3" />
-                              긴급/SOS
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full ${['qna', 'local_gathering'].includes(post.category) ? 'bg-orange-400 text-white dark:bg-orange-500' :
+                              ['daily', 'local_review', 'hospital'].includes(post.category) ? 'bg-emerald-400 text-white dark:bg-emerald-500' :
+                                ['tip', 'info_share', 'local_info'].includes(post.category) ? 'bg-indigo-400 text-white dark:bg-indigo-500' :
+                                  ['item_review', 'local_share'].includes(post.category) ? 'bg-pink-400 text-white dark:bg-pink-500' :
+                                    'bg-stone-100 text-stone-600 dark:bg-gray-700 border border-stone-200 dark:text-gray-300'
+                              }`}>
+                              <Icon className="w-3 h-3" strokeWidth={2.5} />
+                              {label}
                             </span>
                           );
-                        }
-
-                        return (
-                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full ${['qna', 'local_gathering'].includes(post.category) ? 'bg-orange-400 text-white dark:bg-orange-500' :
-                            ['daily', 'local_review', 'hospital'].includes(post.category) ? 'bg-emerald-400 text-white dark:bg-emerald-500' :
-                              ['tip', 'info_share', 'local_info'].includes(post.category) ? 'bg-indigo-400 text-white dark:bg-indigo-500' :
-                                ['item_review', 'local_share'].includes(post.category) ? 'bg-pink-400 text-white dark:bg-pink-500' :
-                                  'bg-stone-100 text-stone-600 dark:bg-gray-700 border border-stone-200 dark:text-gray-300'
-                            }`}>
-                            <Icon className="w-3 h-3" strokeWidth={2.5} />
-                            {label}
-                          </span>
-                        );
-                      })()}
+                        })()}
+                      </div>
                     </div>
 
                     <div className="flex flex-col gap-3">
@@ -624,16 +782,36 @@ const CommunityPage = () => {
                         )}
                       </div>
                       {hasThumbnail && (
-                        <div className="w-full h-44 rounded-2xl overflow-hidden border border-stone-100 dark:border-gray-700">
-                          <img
-                            src={post.thumbnailUrl}
-                            alt={`${post.title || '게시글'} 첨부 이미지`}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                            onError={() => {
-                              setImageLoadErrorMap((prev) => ({ ...prev, [String(post.id)]: true }));
-                            }}
-                          />
+                        <div className="w-full aspect-square rounded-2xl overflow-hidden border border-stone-100 dark:border-gray-700">
+                          {hasThumbnailVariants ? (
+                            <picture>
+                              {post.thumbnailAvifUrl && <source type="image/avif" srcSet={post.thumbnailAvifUrl} />}
+                              {post.thumbnailWebpUrl && <source type="image/webp" srcSet={post.thumbnailWebpUrl} />}
+                              {post.thumbnailJpegUrl && <source type="image/jpeg" srcSet={post.thumbnailJpegUrl} />}
+                              {post.thumbnailPngUrl && <source type="image/png" srcSet={post.thumbnailPngUrl} />}
+                              <img
+                                src={post.thumbnailUrl}
+                                alt={`${post.title || '게시글'} 첨부 이미지`}
+                                width={post.thumbnailWidth || undefined}
+                                height={post.thumbnailHeight || undefined}
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                                onError={() => {
+                                  setImageLoadErrorMap((prev) => ({ ...prev, [String(post.id)]: true }));
+                                }}
+                              />
+                            </picture>
+                          ) : (
+                            <img
+                              src={post.thumbnailUrl}
+                              alt={`${post.title || '게시글'} 첨부 이미지`}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                              onError={() => {
+                                setImageLoadErrorMap((prev) => ({ ...prev, [String(post.id)]: true }));
+                              }}
+                            />
+                          )}
                         </div>
                       )}
                       {!hasThumbnail && post.hasFile && (
@@ -651,19 +829,20 @@ const CommunityPage = () => {
                       disabled={Boolean(likeLoading[post.id])}
                       aria-busy={Boolean(likeLoading[post.id])}
                       aria-label={`${likedMap[post.id] ? '공감 취소' : '공감'}: ${post.title || '게시글'}`}
-                      className={`flex items-center gap-1.5 text-xs font-normal transition-colors disabled:opacity-60 ${likedMap[post.id] ? 'text-rose-500 dark:text-rose-400' : 'hover:text-stone-500 dark:hover:text-gray-300'
+                      className={`flex items-center gap-1.5 text-sm font-normal transition-colors disabled:opacity-60 ${likedMap[post.id] ? 'text-rose-500 dark:text-rose-400' : 'hover:text-stone-500 dark:hover:text-gray-300'
                         }`}
                     >
-                      <Heart className={`w-4 h-4 ${likedMap[post.id] ? 'fill-rose-500 dark:fill-rose-400' : ''}`} strokeWidth={1.5} />
+                      <Heart className={`w-[18px] h-[18px] ${likedMap[post.id] ? 'fill-rose-500 dark:fill-rose-400' : ''}`} strokeWidth={1.5} />
                       {likeCounts[post.id] ?? post.likeCount ?? 0}
                     </button>
-                    <div className="flex items-center gap-1.5 text-xs font-normal">
-                      <MessageSquare className="w-4 h-4" strokeWidth={1.5} /> {post.commentCount ?? 0}
+                    <div className="flex items-center gap-1.5 text-sm font-normal">
+                      <MessageSquare className="w-[18px] h-[18px]" strokeWidth={1.5} /> {post.commentCount ?? 0}
                     </div>
                   </div>
                 </article>
               );
-            })
+            })}
+            </>
           ) : queryParam.trim() ? (
             <div className="py-20 text-center text-stone-400 dark:text-gray-500">
               <p className="mb-2">

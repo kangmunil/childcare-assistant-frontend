@@ -1,13 +1,32 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, MoreHorizontal, Heart, MessageSquare, Share2, User, Send, Trash2, Edit3, X, MapPin, Crown, AlertCircle, Lock } from 'lucide-react';
+import { ArrowLeft, MoreHorizontal, Heart, MessageSquare, Share2, User, Send, Trash2, Edit3, X, MapPin, Crown, AlertCircle, Lock, Globe, CheckCircle2, RotateCcw } from 'lucide-react';
 import api from '../lib/api';
 import { getLocalLikeMap, setLocalLike } from '../lib/likeStorage';
 import { useAuth } from '../contexts/AuthContext';
 import { getRegionLabels } from '../utils/regionLabel';
+import {
+  isCommunityLegacyDisplayImageExtension,
+  getCommunityImageVariantSet,
+  getCommunityPreferredVariantUrl,
+} from '../utils/communityImageUpload';
 
-const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg']);
+const getPostScopeBadgeMeta = (postScope) => {
+  if (String(postScope || '').toLowerCase() === 'neighbor') {
+    return {
+      label: '동네생활',
+      Icon: MapPin,
+      className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+    };
+  }
+
+  return {
+    label: '육아광장',
+    Icon: Globe,
+    className: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
+  };
+};
 
 const PostDetailPage = () => {
   const location = useLocation();
@@ -37,10 +56,16 @@ const PostDetailPage = () => {
   const queryClient = useQueryClient();
 
   const categoryLabels = {
-    qna: '질문',
-    daily: '일상공유',
+    qna: '고민상담',
+    daily: '자유게시판',
     tip: '육아꿀팁',
-    urgent: '지금급해요',
+    item_review: '육아템리뷰',
+    info_share: '정보공유',
+    urgent: '긴급/SOS',
+    local_info: '동네정보',
+    local_review: '동네후기',
+    local_gathering: '동네번개',
+    local_share: '동네나눔',
     hospital: '병원/기관'
   };
   const communityListPath = `/community${location.search || ''}`;
@@ -113,6 +138,8 @@ const PostDetailPage = () => {
   const comments = useMemo(() => (Array.isArray(commentsData) ? commentsData : []), [commentsData]);
   const commentsErrorMessage = commentsError ? '댓글을 불러오지 못했습니다.' : '';
   const postRegionLabels = useMemo(() => getRegionLabels(post?.regUserRegionName), [post?.regUserRegionName]);
+  const postScopeBadge = useMemo(() => getPostScopeBadgeMeta(post?.postScope), [post?.postScope]);
+  const isUrgentPost = useMemo(() => String(post?.category || '').toLowerCase() === 'urgent', [post?.category]);
 
   useEffect(() => {
     if (!openCommentMenuId) return;
@@ -205,14 +232,24 @@ const PostDetailPage = () => {
   const postImages = useMemo(() => {
     const files = Array.isArray(post?.files) ? post.files : [];
     return files
-      .filter((file) => IMAGE_EXTENSIONS.has(String(file?.extension || '').toLowerCase()))
+      .filter((file) => isCommunityLegacyDisplayImageExtension(file?.extension))
       .map((file) => {
         const directPath = typeof file?.filePath === 'string' && /^https?:\/\//.test(file.filePath)
           ? file.filePath
           : null;
+        const detailVariant = getCommunityImageVariantSet(file, 'detail');
+        const posterVariant = getCommunityImageVariantSet(file, 'poster');
+        const preferredOptimizedUrl = getCommunityPreferredVariantUrl(file, 'detail')
+          || getCommunityPreferredVariantUrl(file, 'poster');
+        const width = detailVariant?.width || posterVariant?.width || null;
+        const height = detailVariant?.height || posterVariant?.height || null;
         return {
           id: file?.id,
-          url: file?.downloadUrl || directPath,
+          url: preferredOptimizedUrl || file?.downloadUrl || directPath,
+          detailVariant,
+          posterVariant,
+          width,
+          height,
           name: file?.orgFilename || file?.fileName || '첨부 이미지'
         };
       })
@@ -442,6 +479,7 @@ const PostDetailPage = () => {
     const postAuthorId = toComparableId(post.regId);
     return Boolean(currentUserId) && Boolean(postAuthorId) && currentUserId === postAuthorId;
   }, [post, user]);
+  const canToggleUrgentResolved = isAuthor && isUrgentPost;
 
   const closeCommentMenu = () => {
     if (commentMenuCloseTimerRef.current !== null) {
@@ -559,6 +597,30 @@ const PostDetailPage = () => {
     },
     onError: (error) => {
       alert(error?.message || '게시글 삭제에 실패했습니다.');
+    }
+  });
+
+  const toggleUrgentResolveMutation = useMutation({
+    mutationFn: (resolved) => api.put(
+      `/boards/${post?.boardSlug || passedSlug || 'community'}/items/${id}/urgent-resolve`,
+      { resolved }
+    ),
+    onSuccess: async (response) => {
+      const data = response?.data || response || null;
+      if (data) {
+        queryClient.setQueryData(['community', 'detail', id], (old) => (
+          old ? { ...old, ...data } : old
+        ));
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['community', 'detail', id] }),
+        queryClient.invalidateQueries({ queryKey: ['community'] }),
+        queryClient.invalidateQueries({ queryKey: ['community', 'urgent-slot'] }),
+        queryClient.invalidateQueries({ queryKey: ['community', 'highlights'] }),
+      ]);
+    },
+    onError: (error) => {
+      alert(error?.message || '긴급/SOS 상태 변경에 실패했습니다.');
     }
   });
 
@@ -775,6 +837,13 @@ const PostDetailPage = () => {
     });
   };
 
+  const handleToggleUrgentResolved = () => {
+    if (!canToggleUrgentResolved || toggleUrgentResolveMutation.isPending) return;
+    const nextResolved = !Boolean(post?.urgentResolved);
+    toggleUrgentResolveMutation.mutate(nextResolved);
+    setShowPostMenu(false);
+  };
+
   const errorMessage = postError?.message || '';
 
   if (isPostLoading) {
@@ -817,6 +886,20 @@ const PostDetailPage = () => {
                   <div className="absolute right-0 top-full mt-2 w-32 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-stone-100 dark:border-gray-700 z-40 overflow-hidden">
                     {isAuthor && (
                       <>
+                        {canToggleUrgentResolved && (
+                          <button
+                            onClick={handleToggleUrgentResolved}
+                            disabled={toggleUrgentResolveMutation.isPending}
+                            className={`w-full px-4 py-3 text-left text-sm hover:bg-stone-50 dark:hover:bg-gray-700 flex items-center gap-2 disabled:opacity-60 ${
+                              post?.urgentResolved
+                                ? 'text-amber-600 dark:text-amber-300'
+                                : 'text-emerald-600 dark:text-emerald-300'
+                            }`}
+                          >
+                            {post?.urgentResolved ? <RotateCcw className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+                            {post?.urgentResolved ? '해결 해제' : '해결됨 처리'}
+                          </button>
+                        )}
                         <button
                           onClick={() => {
                             setShowPostMenu(false);
@@ -859,13 +942,13 @@ const PostDetailPage = () => {
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <span className="font-bold text-stone-800 dark:text-gray-100">{post.regUserName || '알 수 없음'}</span>
                 {post.sameNeighborhood && (
                   <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-stone-900 dark:bg-amber-500 dark:text-gray-900 shadow-sm">
                     <MapPin className="w-3 h-3" />
                     인증이웃
                   </span>
                 )}
-                <span className="font-bold text-stone-800 dark:text-gray-100">{post.regUserName || '알 수 없음'}</span>
                 {post.regUserHonorNeighbor && (
                   <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-gradient-to-r from-amber-200 to-yellow-400 text-stone-900 shadow-sm">
                     <Crown className="w-3 h-3 text-amber-700" />
@@ -874,10 +957,20 @@ const PostDetailPage = () => {
                 )}
                 {post.regUserParentingStage && (
                   <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${post.regUserParentingStage === '신생아' ? 'bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300' :
-                      post.regUserParentingStage === '영아' || post.regUserParentingStage === '유아' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' :
-                        'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'
+                    post.regUserParentingStage === '영아' || post.regUserParentingStage === '유아' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' :
+                      'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'
                     }`}>
                     {post.regUserParentingStage}
+                  </span>
+                )}
+                <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${postScopeBadge.className}`}>
+                  <postScopeBadge.Icon className="w-3 h-3" strokeWidth={2.5} />
+                  {postScopeBadge.label}
+                </span>
+                {isUrgentPost && post?.urgentResolved && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                    <CheckCircle2 className="w-3 h-3" strokeWidth={2.5} />
+                    해결됨
                   </span>
                 )}
               </div>
@@ -919,13 +1012,39 @@ const PostDetailPage = () => {
             {postImages.length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
                 {postImages.map((file) => (
-                  <div key={file.id || file.url} className="rounded-2xl overflow-hidden border border-stone-100 dark:border-gray-700">
-                    <img
-                      src={file.url}
-                      alt={file.name}
-                      className="w-full h-full max-h-[340px] object-cover"
-                      loading="lazy"
-                    />
+                  <div
+                    key={file.id || file.url}
+                    className="rounded-2xl overflow-hidden border border-stone-100 dark:border-gray-700 bg-stone-50 dark:bg-gray-800/40"
+                    style={file.width && file.height ? { aspectRatio: `${file.width} / ${file.height}` } : undefined}
+                  >
+                    {file.detailVariant || file.posterVariant ? (
+                      <picture>
+                        {file.detailVariant?.avifUrl && <source type="image/avif" srcSet={file.detailVariant.avifUrl} />}
+                        {file.detailVariant?.webpUrl && <source type="image/webp" srcSet={file.detailVariant.webpUrl} />}
+                        {file.detailVariant?.jpegUrl && <source type="image/jpeg" srcSet={file.detailVariant.jpegUrl} />}
+                        {file.detailVariant?.pngUrl && <source type="image/png" srcSet={file.detailVariant.pngUrl} />}
+                        {file.posterVariant?.webpUrl && <source type="image/webp" srcSet={file.posterVariant.webpUrl} />}
+                        {file.posterVariant?.jpegUrl && <source type="image/jpeg" srcSet={file.posterVariant.jpegUrl} />}
+                        {file.posterVariant?.pngUrl && <source type="image/png" srcSet={file.posterVariant.pngUrl} />}
+                        <img
+                          src={file.url}
+                          alt={file.name}
+                          width={file.width || undefined}
+                          height={file.height || undefined}
+                          className="w-full h-full max-h-[340px] object-cover"
+                          loading="lazy"
+                        />
+                      </picture>
+                    ) : (
+                      <img
+                        src={file.url}
+                        alt={file.name}
+                        width={file.width || undefined}
+                        height={file.height || undefined}
+                        className="w-full h-full max-h-[340px] object-cover"
+                        loading="lazy"
+                      />
+                    )}
                   </div>
                 ))}
               </div>
@@ -1057,360 +1176,360 @@ const PostDetailPage = () => {
               {groupedComments.map((comment) => {
                 const canViewSecret = comment.secretYn !== 'Y' || isOwnedComment(comment) || isAuthor;
                 return (
-                <div key={comment.id} className="py-4 px-1.5 md:px-2 rounded-xl border-b border-stone-100/90 dark:border-slate-700/60 group transition-colors hover:bg-stone-50/60 dark:hover:bg-slate-800/40">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-stone-100 dark:bg-gray-800 flex items-center justify-center">
-                        <User className="w-4 h-4 text-stone-300 dark:text-gray-500" />
-                      </div>
-                      <span className="text-sm font-bold text-stone-700 dark:text-gray-200">{comment.regUserName || '알 수 없음'}</span>
-                      {comment.secretYn === 'Y' && <Lock className="w-3 h-3 text-stone-400 dark:text-slate-500" />}
-                      <span className="text-xs text-stone-500 dark:text-slate-400">{formatDate(comment.regDate)}</span>
-                    </div>
-                    <div className={`flex items-center gap-2.5 text-xs transition-opacity transition-colors ${comment.isPending || comment.isError
-                      ? 'opacity-100 text-stone-500 dark:text-slate-400'
-                      : `${isCommentMenuOpen(comment.id)
-                        ? 'opacity-100 md:opacity-100'
-                        : 'opacity-100 md:opacity-0 md:group-hover:opacity-100'
-                      } text-stone-500 dark:text-slate-400 md:text-stone-400 md:dark:text-slate-500`
-                      }`}>
-                      {comment.isPending ? (
-                        <span>전송 중...</span>
-                      ) : comment.isError ? (
-                        <>
-                          <button type="button" onClick={() => retryComment(comment)}>재시도</button>
-                          <button type="button" onClick={() => removeTempComment(comment.id)}>삭제</button>
-                        </>
-                      ) : (
-                        isOwnedComment(comment) && (
-                          <div
-                            className="relative z-40"
-                            onPointerEnter={clearCommentMenuCloseTimer}
-                            onPointerLeave={() => {
-                              if (isCommentMenuOpen(comment.id)) {
-                                scheduleCommentMenuClose(comment.id);
-                              }
-                            }}
-                          >
-                            <button
-                              type="button"
-                              data-comment-menu-trigger
-                              data-comment-menu-id={toCommentMenuId(comment.id)}
-                              aria-label="댓글 메뉴"
-                              aria-haspopup="menu"
-                              aria-expanded={isCommentMenuOpen(comment.id)}
-                              onPointerDown={(event) => event.stopPropagation()}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                toggleCommentMenu(comment.id);
-                              }}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 dark:text-slate-500 dark:hover:text-slate-200 dark:hover:bg-slate-700/60"
-                            >
-                              <MoreHorizontal className="w-4 h-4" />
-                            </button>
-                            {isCommentMenuOpen(comment.id) && (
-                              <>
-                                <div
-                                  data-comment-menu-hover-bridge
-                                  aria-hidden="true"
-                                  className="absolute right-0 top-full h-2 w-28"
-                                />
-                                <div
-                                  role="menu"
-                                  data-comment-menu
-                                  data-comment-menu-id={toCommentMenuId(comment.id)}
-                                  className="absolute right-0 top-full mt-1 w-28 rounded-lg border border-stone-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg overflow-hidden"
-                                >
-                                  <button
-                                    type="button"
-                                    role="menuitem"
-                                    onPointerDown={(event) => event.stopPropagation()}
-                                    onMouseDown={(event) => event.stopPropagation()}
-                                    onTouchStart={(event) => event.stopPropagation()}
-                                    ref={commentMenuFirstActionRef}
-                                    onClick={() => startEditComment(comment)}
-                                    className="w-full px-3 py-2 text-left text-xs text-stone-700 dark:text-gray-200 hover:bg-stone-50 dark:hover:bg-gray-700"
-                                  >
-                                    수정
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onPointerDown={(event) => event.stopPropagation()}
-                                    onMouseDown={(event) => event.stopPropagation()}
-                                    onTouchStart={(event) => event.stopPropagation()}
-                                    role="menuitem"
-                                    onClick={() => {
-                                      setCommentError('');
-                                      closeCommentMenu();
-                                      deleteCommentMutation.mutate(comment.id);
-                                    }}
-                                    className="w-full px-3 py-2 text-left text-xs text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20"
-                                  >
-                                    삭제
-                                  </button>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        )
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="pl-10 pr-4 mt-2 text-sm text-stone-600 dark:text-gray-300 leading-relaxed">
-                    {editingCommentId === comment.id ? (
-                      <div className="space-y-2">
-                        <input
-                          type="text"
-                          value={editingContent}
-                          onChange={(event) => setEditingContent(event.target.value)}
-                          className="w-full rounded-lg bg-white/70 dark:bg-gray-900/60 border border-stone-200 dark:border-gray-700 px-3 py-2 text-sm focus:outline-none"
-                        />
-                        <div className="flex gap-2 text-[11px] text-stone-400">
-                          <button type="button" onClick={submitEditComment} className="text-amber-500">저장</button>
-                          <button type="button" onClick={cancelEditComment}>취소</button>
+                  <div key={comment.id} className="py-4 px-1.5 md:px-2 rounded-xl border-b border-stone-100/90 dark:border-slate-700/60 group transition-colors hover:bg-stone-50/60 dark:hover:bg-slate-800/40">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-stone-100 dark:bg-gray-800 flex items-center justify-center">
+                          <User className="w-4 h-4 text-stone-300 dark:text-gray-500" />
                         </div>
+                        <span className="text-sm font-bold text-stone-700 dark:text-gray-200">{comment.regUserName || '알 수 없음'}</span>
+                        {comment.secretYn === 'Y' && <Lock className="w-3 h-3 text-stone-400 dark:text-slate-500" />}
+                        <span className="text-xs text-stone-500 dark:text-slate-400">{formatDate(comment.regDate)}</span>
                       </div>
-                    ) : canViewSecret ? (
-                      comment.content
-                    ) : (
-                      <span className="flex items-center gap-1 text-stone-400 dark:text-slate-500 italic">
-                        <Lock className="w-3.5 h-3.5" /> 비밀 댓글입니다.
-                      </span>
-                    )}
-                  </div>
-
-                  {!comment.isPending && !comment.isError && (
-                    <div className="pl-10 pr-4 mt-2 flex items-center gap-2.5">
-                      {isCommentLikeAvailable(comment) && (
-                        <button
-                          type="button"
-                          onClick={() => toggleCommentLike(comment)}
-                          disabled={isCommentLikeLoading(comment.id)}
-                          className={`inline-flex min-h-9 items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${comment.liked
-                            ? 'text-rose-600 bg-rose-50 ring-1 ring-rose-200/70 dark:text-rose-300 dark:bg-rose-500/20 dark:ring-rose-400/25'
-                            : 'text-stone-600 bg-stone-100 hover:bg-stone-200 dark:text-slate-300 dark:bg-slate-700/70 dark:hover:bg-slate-700'
-                            }`}
-                        >
-                          <Heart className={`w-3.5 h-3.5 ${comment.liked ? 'fill-rose-500' : ''}`} />
-                          {comment.likeCount ?? 0}
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => toggleReplyComposer(comment)}
-                        className={`inline-flex min-h-9 items-center px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${replyTarget?.id === comment.id
-                          ? 'text-amber-700 bg-amber-100 dark:text-amber-300 dark:bg-amber-500/20'
-                          : 'text-stone-600 bg-stone-100 hover:bg-stone-200 dark:text-slate-300 dark:bg-slate-700/70 dark:hover:bg-slate-700'
-                          }`}
-                      >
-                        {replyTarget?.id === comment.id ? '답글 입력 닫기' : '답글 달기'}
-                      </button>
-                    </div>
-                  )}
-
-                  {(comment.replies?.length > 0 || replyTarget?.id === comment.id) && (
-                    <div className="relative mt-3 pl-10 space-y-3">
-                      <div
-                        aria-hidden="true"
-                        className="pointer-events-none absolute left-4 -top-16 bottom-0 w-px bg-stone-200/80 dark:bg-slate-700/70"
-                      />
-                      {comment.replies?.map((reply) => {
-                        const canViewReplySecret = reply.secretYn !== 'Y' || isOwnedComment(reply) || isAuthor;
-                        return (
-                        <div key={reply.id} className="group rounded-xl px-2 py-2 bg-stone-50/55 dark:bg-slate-800/35 border border-stone-100/70 dark:border-slate-700/40">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex items-center gap-2">
-                              <div className="w-7 h-7 rounded-full bg-stone-100 dark:bg-gray-800 flex items-center justify-center">
-                                <User className="w-3.5 h-3.5 text-stone-300 dark:text-gray-500" />
-                              </div>
-                              <span className="text-xs font-bold text-stone-700 dark:text-gray-200">{reply.regUserName || '알 수 없음'}</span>
-                              {reply.secretYn === 'Y' && <Lock className="w-3 h-3 text-stone-400 dark:text-slate-500" />}
-                              <span className="text-[10px] text-stone-500 dark:text-slate-400">{formatDate(reply.regDate)}</span>
-                            </div>
-                            <div className={`flex items-center gap-2 text-[11px] transition-opacity transition-colors ${reply.isPending || reply.isError
-                              ? 'opacity-100 text-stone-500 dark:text-slate-400'
-                              : `${isCommentMenuOpen(reply.id)
-                                ? 'opacity-100 md:opacity-100'
-                                : 'opacity-100 md:opacity-0 md:group-hover:opacity-100'
-                              } text-stone-500 dark:text-slate-400 md:text-stone-400 md:dark:text-slate-500`
-                              }`}>
-                              {reply.isPending ? (
-                                <span>전송 중...</span>
-                              ) : reply.isError ? (
+                      <div className={`flex items-center gap-2.5 text-xs transition-opacity transition-colors ${comment.isPending || comment.isError
+                        ? 'opacity-100 text-stone-500 dark:text-slate-400'
+                        : `${isCommentMenuOpen(comment.id)
+                          ? 'opacity-100 md:opacity-100'
+                          : 'opacity-100 md:opacity-0 md:group-hover:opacity-100'
+                        } text-stone-500 dark:text-slate-400 md:text-stone-400 md:dark:text-slate-500`
+                        }`}>
+                        {comment.isPending ? (
+                          <span>전송 중...</span>
+                        ) : comment.isError ? (
+                          <>
+                            <button type="button" onClick={() => retryComment(comment)}>재시도</button>
+                            <button type="button" onClick={() => removeTempComment(comment.id)}>삭제</button>
+                          </>
+                        ) : (
+                          isOwnedComment(comment) && (
+                            <div
+                              className="relative z-40"
+                              onPointerEnter={clearCommentMenuCloseTimer}
+                              onPointerLeave={() => {
+                                if (isCommentMenuOpen(comment.id)) {
+                                  scheduleCommentMenuClose(comment.id);
+                                }
+                              }}
+                            >
+                              <button
+                                type="button"
+                                data-comment-menu-trigger
+                                data-comment-menu-id={toCommentMenuId(comment.id)}
+                                aria-label="댓글 메뉴"
+                                aria-haspopup="menu"
+                                aria-expanded={isCommentMenuOpen(comment.id)}
+                                onPointerDown={(event) => event.stopPropagation()}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  toggleCommentMenu(comment.id);
+                                }}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 dark:text-slate-500 dark:hover:text-slate-200 dark:hover:bg-slate-700/60"
+                              >
+                                <MoreHorizontal className="w-4 h-4" />
+                              </button>
+                              {isCommentMenuOpen(comment.id) && (
                                 <>
-                                  <button type="button" onClick={() => retryComment(reply)}>재시도</button>
-                                  <button type="button" onClick={() => removeTempComment(reply.id)}>삭제</button>
-                                </>
-                              ) : (
-                                isOwnedComment(reply) && (
                                   <div
-                                    className="relative z-40"
-                                    onPointerEnter={clearCommentMenuCloseTimer}
-                                    onPointerLeave={() => {
-                                      if (isCommentMenuOpen(reply.id)) {
-                                        scheduleCommentMenuClose(reply.id);
-                                      }
-                                    }}
+                                    data-comment-menu-hover-bridge
+                                    aria-hidden="true"
+                                    className="absolute right-0 top-full h-2 w-28"
+                                  />
+                                  <div
+                                    role="menu"
+                                    data-comment-menu
+                                    data-comment-menu-id={toCommentMenuId(comment.id)}
+                                    className="absolute right-0 top-full mt-1 w-28 rounded-lg border border-stone-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg overflow-hidden"
                                   >
                                     <button
                                       type="button"
-                                      data-comment-menu-trigger
-                                      data-comment-menu-id={toCommentMenuId(reply.id)}
-                                      aria-label="대댓글 메뉴"
-                                      aria-haspopup="menu"
-                                      aria-expanded={isCommentMenuOpen(reply.id)}
+                                      role="menuitem"
                                       onPointerDown={(event) => event.stopPropagation()}
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        toggleCommentMenu(reply.id);
-                                      }}
-                                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 dark:text-slate-500 dark:hover:text-slate-200 dark:hover:bg-slate-700/60"
+                                      onMouseDown={(event) => event.stopPropagation()}
+                                      onTouchStart={(event) => event.stopPropagation()}
+                                      ref={commentMenuFirstActionRef}
+                                      onClick={() => startEditComment(comment)}
+                                      className="w-full px-3 py-2 text-left text-xs text-stone-700 dark:text-gray-200 hover:bg-stone-50 dark:hover:bg-gray-700"
                                     >
-                                      <MoreHorizontal className="w-3.5 h-3.5" />
+                                      수정
                                     </button>
-                                    {isCommentMenuOpen(reply.id) && (
-                                      <>
-                                        <div
-                                          data-comment-menu-hover-bridge
-                                          aria-hidden="true"
-                                          className="absolute right-0 top-full h-2 w-28"
-                                        />
-                                        <div
-                                          role="menu"
-                                          data-comment-menu
-                                          data-comment-menu-id={toCommentMenuId(reply.id)}
-                                          className="absolute right-0 top-full mt-1 w-28 rounded-lg border border-stone-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg overflow-hidden"
-                                        >
-                                          <button
-                                            type="button"
-                                            onPointerDown={(event) => event.stopPropagation()}
-                                            onMouseDown={(event) => event.stopPropagation()}
-                                            onTouchStart={(event) => event.stopPropagation()}
-                                            role="menuitem"
-                                            ref={commentMenuFirstActionRef}
-                                            onClick={() => startEditComment(reply)}
-                                            className="w-full px-3 py-2 text-left text-xs text-stone-700 dark:text-gray-200 hover:bg-stone-50 dark:hover:bg-gray-700"
-                                          >
-                                            수정
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onPointerDown={(event) => event.stopPropagation()}
-                                            onMouseDown={(event) => event.stopPropagation()}
-                                            onTouchStart={(event) => event.stopPropagation()}
-                                            role="menuitem"
-                                            onClick={() => {
-                                              setCommentError('');
-                                              closeCommentMenu();
-                                              deleteCommentMutation.mutate(reply.id);
-                                            }}
-                                            className="w-full px-3 py-2 text-left text-xs text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20"
-                                          >
-                                            삭제
-                                          </button>
-                                        </div>
-                                      </>
-                                    )}
+                                    <button
+                                      type="button"
+                                      onPointerDown={(event) => event.stopPropagation()}
+                                      onMouseDown={(event) => event.stopPropagation()}
+                                      onTouchStart={(event) => event.stopPropagation()}
+                                      role="menuitem"
+                                      onClick={() => {
+                                        setCommentError('');
+                                        closeCommentMenu();
+                                        deleteCommentMutation.mutate(comment.id);
+                                      }}
+                                      className="w-full px-3 py-2 text-left text-xs text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                                    >
+                                      삭제
+                                    </button>
                                   </div>
-                                )
+                                </>
                               )}
                             </div>
-                          </div>
-                          <div className="pl-9 pr-4 mt-2 text-sm text-stone-600 dark:text-gray-300 leading-relaxed">
-                            {editingCommentId === reply.id ? (
-                              <div className="space-y-2">
-                                <input
-                                  type="text"
-                                  value={editingContent}
-                                  onChange={(event) => setEditingContent(event.target.value)}
-                                  className="w-full rounded-lg bg-white/70 dark:bg-gray-900/60 border border-stone-200 dark:border-gray-700 px-3 py-2 text-sm focus:outline-none"
-                                />
-                                <div className="flex gap-2 text-[11px] text-stone-400">
-                                  <button type="button" onClick={submitEditComment} className="text-amber-500">저장</button>
-                                  <button type="button" onClick={cancelEditComment}>취소</button>
-                                </div>
-                              </div>
-                            ) : canViewReplySecret ? (
-                              reply.content
-                            ) : (
-                              <span className="flex items-center gap-1 text-stone-400 dark:text-slate-500 italic">
-                                <Lock className="w-3.5 h-3.5" /> 비밀 댓글입니다.
-                              </span>
-                            )}
-                          </div>
-                          {isCommentLikeAvailable(reply) && (
-                            <div className="pl-9 pr-4 mt-2">
-                              <button
-                                type="button"
-                                onClick={() => toggleCommentLike(reply)}
-                                disabled={isCommentLikeLoading(reply.id)}
-                                className={`inline-flex min-h-8 items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${reply.liked
-                                  ? 'text-rose-600 bg-rose-50 ring-1 ring-rose-200/70 dark:text-rose-300 dark:bg-rose-500/20 dark:ring-rose-400/25'
-                                  : 'text-stone-600 bg-stone-100 hover:bg-stone-200 dark:text-slate-300 dark:bg-slate-700/70 dark:hover:bg-slate-700'
-                                  }`}
-                              >
-                                <Heart className={`w-3 h-3 ${reply.liked ? 'fill-rose-500' : ''}`} />
-                                {reply.likeCount ?? 0}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                        );
-                      })}
+                          )
+                        )}
+                      </div>
+                    </div>
 
-                      {replyTarget?.id === comment.id && (
-                        <div className="rounded-xl bg-stone-50/70 dark:bg-slate-800/70 border border-stone-200/80 dark:border-slate-600/70 p-3.5 space-y-2.5">
-                          <div className="text-[11px] text-stone-500 dark:text-slate-400 flex items-center justify-between">
-                            <span>{comment.regUserName || '알 수 없음'}에게 답글 작성</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setReplyTarget(null);
-                                setIsReplySecret(false);
-                              }}
-                              className="font-medium text-stone-600 dark:text-slate-300 hover:text-stone-800 dark:hover:text-slate-100"
-                            >
-                              취소
-                            </button>
+                    <div className="pl-10 pr-4 mt-2 text-sm text-stone-600 dark:text-gray-300 leading-relaxed">
+                      {editingCommentId === comment.id ? (
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            value={editingContent}
+                            onChange={(event) => setEditingContent(event.target.value)}
+                            className="w-full rounded-lg bg-white/70 dark:bg-gray-900/60 border border-stone-200 dark:border-gray-700 px-3 py-2 text-sm focus:outline-none"
+                          />
+                          <div className="flex gap-2 text-[11px] text-stone-400">
+                            <button type="button" onClick={submitEditComment} className="text-amber-500">저장</button>
+                            <button type="button" onClick={cancelEditComment}>취소</button>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <textarea
-                              ref={replyTextareaRef}
-                              rows={1}
-                              placeholder="답글을 입력하세요"
-                              value={replyInput}
-                              onChange={(event) => {
-                                setReplyInput(event.target.value);
-                                autoResize(event.target, 2);
-                              }}
-                              disabled={!isAuthenticated}
-                              className="flex-1 rounded-lg bg-stone-50 dark:bg-slate-800 border border-stone-200 dark:border-slate-700 px-3 py-2 text-sm leading-6 text-stone-800 dark:text-slate-100 placeholder:text-stone-400 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-300/70 dark:focus:ring-amber-400/50 focus:border-amber-300 dark:focus:border-amber-500 disabled:opacity-60 resize-none overflow-y-auto [scrollbar-width:thin] [scrollbar-color:#a8a29e_#f5f5f4] dark:[scrollbar-color:#4b5563_#1f2937]"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleSubmitReply(comment)}
-                              disabled={commentMutation.isPending || !isAuthenticated}
-                              className="h-10 w-10 shrink-0 inline-flex items-center justify-center rounded-full bg-amber-400 text-stone-900 hover:bg-amber-300 active:scale-95 transition disabled:opacity-45 disabled:cursor-not-allowed"
-                            >
-                              <Send className="w-4 h-4" />
-                            </button>
-                          </div>
-                          <label className="flex items-center gap-1.5 cursor-pointer select-none ml-0.5">
-                            <input
-                              type="checkbox"
-                              checked={isReplySecret}
-                              onChange={(event) => setIsReplySecret(event.target.checked)}
-                              className="w-3.5 h-3.5 rounded accent-amber-500"
-                            />
-                            <Lock className="w-3 h-3 text-stone-400 dark:text-slate-500" />
-                            <span className="text-[11px] text-stone-400 dark:text-slate-500 font-medium">비밀답글</span>
-                          </label>
                         </div>
+                      ) : canViewSecret ? (
+                        comment.content
+                      ) : (
+                        <span className="flex items-center gap-1 text-stone-400 dark:text-slate-500 italic">
+                          <Lock className="w-3.5 h-3.5" /> 비밀 댓글입니다.
+                        </span>
                       )}
                     </div>
-                  )}
-                </div>
+
+                    {!comment.isPending && !comment.isError && (
+                      <div className="pl-10 pr-4 mt-2 flex items-center gap-2.5">
+                        {isCommentLikeAvailable(comment) && (
+                          <button
+                            type="button"
+                            onClick={() => toggleCommentLike(comment)}
+                            disabled={isCommentLikeLoading(comment.id)}
+                            className={`inline-flex min-h-9 items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${comment.liked
+                              ? 'text-rose-600 bg-rose-50 ring-1 ring-rose-200/70 dark:text-rose-300 dark:bg-rose-500/20 dark:ring-rose-400/25'
+                              : 'text-stone-600 bg-stone-100 hover:bg-stone-200 dark:text-slate-300 dark:bg-slate-700/70 dark:hover:bg-slate-700'
+                              }`}
+                          >
+                            <Heart className={`w-3.5 h-3.5 ${comment.liked ? 'fill-rose-500' : ''}`} />
+                            {comment.likeCount ?? 0}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => toggleReplyComposer(comment)}
+                          className={`inline-flex min-h-9 items-center px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${replyTarget?.id === comment.id
+                            ? 'text-amber-700 bg-amber-100 dark:text-amber-300 dark:bg-amber-500/20'
+                            : 'text-stone-600 bg-stone-100 hover:bg-stone-200 dark:text-slate-300 dark:bg-slate-700/70 dark:hover:bg-slate-700'
+                            }`}
+                        >
+                          {replyTarget?.id === comment.id ? '답글 입력 닫기' : '답글 달기'}
+                        </button>
+                      </div>
+                    )}
+
+                    {(comment.replies?.length > 0 || replyTarget?.id === comment.id) && (
+                      <div className="relative mt-3 pl-10 space-y-3">
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute left-4 -top-16 bottom-0 w-px bg-stone-200/80 dark:bg-slate-700/70"
+                        />
+                        {comment.replies?.map((reply) => {
+                          const canViewReplySecret = reply.secretYn !== 'Y' || isOwnedComment(reply) || isAuthor;
+                          return (
+                            <div key={reply.id} className="group rounded-xl px-2 py-2 bg-stone-50/55 dark:bg-slate-800/35 border border-stone-100/70 dark:border-slate-700/40">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-7 h-7 rounded-full bg-stone-100 dark:bg-gray-800 flex items-center justify-center">
+                                    <User className="w-3.5 h-3.5 text-stone-300 dark:text-gray-500" />
+                                  </div>
+                                  <span className="text-xs font-bold text-stone-700 dark:text-gray-200">{reply.regUserName || '알 수 없음'}</span>
+                                  {reply.secretYn === 'Y' && <Lock className="w-3 h-3 text-stone-400 dark:text-slate-500" />}
+                                  <span className="text-[10px] text-stone-500 dark:text-slate-400">{formatDate(reply.regDate)}</span>
+                                </div>
+                                <div className={`flex items-center gap-2 text-[11px] transition-opacity transition-colors ${reply.isPending || reply.isError
+                                  ? 'opacity-100 text-stone-500 dark:text-slate-400'
+                                  : `${isCommentMenuOpen(reply.id)
+                                    ? 'opacity-100 md:opacity-100'
+                                    : 'opacity-100 md:opacity-0 md:group-hover:opacity-100'
+                                  } text-stone-500 dark:text-slate-400 md:text-stone-400 md:dark:text-slate-500`
+                                  }`}>
+                                  {reply.isPending ? (
+                                    <span>전송 중...</span>
+                                  ) : reply.isError ? (
+                                    <>
+                                      <button type="button" onClick={() => retryComment(reply)}>재시도</button>
+                                      <button type="button" onClick={() => removeTempComment(reply.id)}>삭제</button>
+                                    </>
+                                  ) : (
+                                    isOwnedComment(reply) && (
+                                      <div
+                                        className="relative z-40"
+                                        onPointerEnter={clearCommentMenuCloseTimer}
+                                        onPointerLeave={() => {
+                                          if (isCommentMenuOpen(reply.id)) {
+                                            scheduleCommentMenuClose(reply.id);
+                                          }
+                                        }}
+                                      >
+                                        <button
+                                          type="button"
+                                          data-comment-menu-trigger
+                                          data-comment-menu-id={toCommentMenuId(reply.id)}
+                                          aria-label="대댓글 메뉴"
+                                          aria-haspopup="menu"
+                                          aria-expanded={isCommentMenuOpen(reply.id)}
+                                          onPointerDown={(event) => event.stopPropagation()}
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            toggleCommentMenu(reply.id);
+                                          }}
+                                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 dark:text-slate-500 dark:hover:text-slate-200 dark:hover:bg-slate-700/60"
+                                        >
+                                          <MoreHorizontal className="w-3.5 h-3.5" />
+                                        </button>
+                                        {isCommentMenuOpen(reply.id) && (
+                                          <>
+                                            <div
+                                              data-comment-menu-hover-bridge
+                                              aria-hidden="true"
+                                              className="absolute right-0 top-full h-2 w-28"
+                                            />
+                                            <div
+                                              role="menu"
+                                              data-comment-menu
+                                              data-comment-menu-id={toCommentMenuId(reply.id)}
+                                              className="absolute right-0 top-full mt-1 w-28 rounded-lg border border-stone-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg overflow-hidden"
+                                            >
+                                              <button
+                                                type="button"
+                                                onPointerDown={(event) => event.stopPropagation()}
+                                                onMouseDown={(event) => event.stopPropagation()}
+                                                onTouchStart={(event) => event.stopPropagation()}
+                                                role="menuitem"
+                                                ref={commentMenuFirstActionRef}
+                                                onClick={() => startEditComment(reply)}
+                                                className="w-full px-3 py-2 text-left text-xs text-stone-700 dark:text-gray-200 hover:bg-stone-50 dark:hover:bg-gray-700"
+                                              >
+                                                수정
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onPointerDown={(event) => event.stopPropagation()}
+                                                onMouseDown={(event) => event.stopPropagation()}
+                                                onTouchStart={(event) => event.stopPropagation()}
+                                                role="menuitem"
+                                                onClick={() => {
+                                                  setCommentError('');
+                                                  closeCommentMenu();
+                                                  deleteCommentMutation.mutate(reply.id);
+                                                }}
+                                                className="w-full px-3 py-2 text-left text-xs text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                                              >
+                                                삭제
+                                              </button>
+                                            </div>
+                                          </>
+                                        )}
+                                      </div>
+                                    )
+                                  )}
+                                </div>
+                              </div>
+                              <div className="pl-9 pr-4 mt-2 text-sm text-stone-600 dark:text-gray-300 leading-relaxed">
+                                {editingCommentId === reply.id ? (
+                                  <div className="space-y-2">
+                                    <input
+                                      type="text"
+                                      value={editingContent}
+                                      onChange={(event) => setEditingContent(event.target.value)}
+                                      className="w-full rounded-lg bg-white/70 dark:bg-gray-900/60 border border-stone-200 dark:border-gray-700 px-3 py-2 text-sm focus:outline-none"
+                                    />
+                                    <div className="flex gap-2 text-[11px] text-stone-400">
+                                      <button type="button" onClick={submitEditComment} className="text-amber-500">저장</button>
+                                      <button type="button" onClick={cancelEditComment}>취소</button>
+                                    </div>
+                                  </div>
+                                ) : canViewReplySecret ? (
+                                  reply.content
+                                ) : (
+                                  <span className="flex items-center gap-1 text-stone-400 dark:text-slate-500 italic">
+                                    <Lock className="w-3.5 h-3.5" /> 비밀 댓글입니다.
+                                  </span>
+                                )}
+                              </div>
+                              {isCommentLikeAvailable(reply) && (
+                                <div className="pl-9 pr-4 mt-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleCommentLike(reply)}
+                                    disabled={isCommentLikeLoading(reply.id)}
+                                    className={`inline-flex min-h-8 items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${reply.liked
+                                      ? 'text-rose-600 bg-rose-50 ring-1 ring-rose-200/70 dark:text-rose-300 dark:bg-rose-500/20 dark:ring-rose-400/25'
+                                      : 'text-stone-600 bg-stone-100 hover:bg-stone-200 dark:text-slate-300 dark:bg-slate-700/70 dark:hover:bg-slate-700'
+                                      }`}
+                                  >
+                                    <Heart className={`w-3 h-3 ${reply.liked ? 'fill-rose-500' : ''}`} />
+                                    {reply.likeCount ?? 0}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {replyTarget?.id === comment.id && (
+                          <div className="rounded-xl bg-stone-50/70 dark:bg-slate-800/70 border border-stone-200/80 dark:border-slate-600/70 p-3.5 space-y-2.5">
+                            <div className="text-[11px] text-stone-500 dark:text-slate-400 flex items-center justify-between">
+                              <span>{comment.regUserName || '알 수 없음'}에게 답글 작성</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setReplyTarget(null);
+                                  setIsReplySecret(false);
+                                }}
+                                className="font-medium text-stone-600 dark:text-slate-300 hover:text-stone-800 dark:hover:text-slate-100"
+                              >
+                                취소
+                              </button>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <textarea
+                                ref={replyTextareaRef}
+                                rows={1}
+                                placeholder="답글을 입력하세요"
+                                value={replyInput}
+                                onChange={(event) => {
+                                  setReplyInput(event.target.value);
+                                  autoResize(event.target, 2);
+                                }}
+                                disabled={!isAuthenticated}
+                                className="flex-1 rounded-lg bg-stone-50 dark:bg-slate-800 border border-stone-200 dark:border-slate-700 px-3 py-2 text-sm leading-6 text-stone-800 dark:text-slate-100 placeholder:text-stone-400 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-300/70 dark:focus:ring-amber-400/50 focus:border-amber-300 dark:focus:border-amber-500 disabled:opacity-60 resize-none overflow-y-auto [scrollbar-width:thin] [scrollbar-color:#a8a29e_#f5f5f4] dark:[scrollbar-color:#4b5563_#1f2937]"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSubmitReply(comment)}
+                                disabled={commentMutation.isPending || !isAuthenticated}
+                                className="h-10 w-10 shrink-0 inline-flex items-center justify-center rounded-full bg-amber-400 text-stone-900 hover:bg-amber-300 active:scale-95 transition disabled:opacity-45 disabled:cursor-not-allowed"
+                              >
+                                <Send className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <label className="flex items-center gap-1.5 cursor-pointer select-none ml-0.5">
+                              <input
+                                type="checkbox"
+                                checked={isReplySecret}
+                                onChange={(event) => setIsReplySecret(event.target.checked)}
+                                className="w-3.5 h-3.5 rounded accent-amber-500"
+                              />
+                              <Lock className="w-3 h-3 text-stone-400 dark:text-slate-500" />
+                              <span className="text-[11px] text-stone-400 dark:text-slate-500 font-medium">비밀답글</span>
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>

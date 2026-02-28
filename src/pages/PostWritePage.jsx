@@ -7,6 +7,12 @@ import useStore from '../store/useStore';
 import LocationSettingModal from '../components/LocationSettingModal';
 import PlaceSearchModal from '../components/PlaceSearchModal';
 import { getRegionLabels } from '../utils/regionLabel';
+import {
+  COMMUNITY_UPLOAD_ACCEPT,
+  prepareCommunityUploadFiles,
+  buildCommunityUploadSelectionMessage,
+  mapCommunityUploadApiErrorMessage,
+} from '../utils/communityImageUpload';
 
 const MAX_IMAGE_COUNT = 5;
 
@@ -30,13 +36,29 @@ const CATEGORIES = {
   neighbor: ['urgent', 'local_info', 'local_review', 'local_gathering', 'local_share']
 };
 
-const readFileAsDataUrl = (file) =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error('이미지를 읽는 중 오류가 발생했습니다.'));
-    reader.readAsDataURL(file);
-  });
+const LOCATION_SCOPE_REQUIRED_MESSAGE = '우리 동네 커뮤니티에 글을 올리려면 동네 설정이 필요해요.';
+const LOCATION_AUTH_REFRESH_MESSAGE = '동네 인증 정보가 필요해요. 다시 동네를 설정해주세요.';
+const CATEGORY_REQUIRED_MESSAGE = '카테고리를 선택해주세요.';
+const TITLE_CONTENT_REQUIRED_MESSAGE = '제목과 내용을 입력해주세요.';
+const LOCAL_REVIEW_PLACE_REQUIRED_MESSAGE = '동네후기 글에는 장소를 선택해주세요.';
+const SCOPE_CATEGORY_INVALID_MESSAGE = '선택한 게시 대상과 카테고리가 맞지 않아요. 카테고리를 다시 선택해주세요.';
+
+const isValidPlaceSelection = (place) => {
+  const lat = place?.placeLat;
+  const lng = place?.placeLng;
+  return Boolean(
+    typeof place?.placeName === 'string'
+    && place.placeName.trim()
+    && typeof place?.placeAddress === 'string'
+    && place.placeAddress.trim()
+    && Number.isFinite(lat)
+    && lat >= -90
+    && lat <= 90
+    && Number.isFinite(lng)
+    && lng >= -180
+    && lng <= 180
+  );
+};
 
 const PostWritePage = () => {
   const navigate = useNavigate();
@@ -66,7 +88,10 @@ const PostWritePage = () => {
   const [placeSearchModalOpen, setPlaceSearchModalOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState(null); // { placeName, placeAddress, placeLat, placeLng }
   const [locationSubmitError, setLocationSubmitError] = useState(false);
+  const [categorySubmitError, setCategorySubmitError] = useState(false);
+  const [placeSubmitError, setPlaceSubmitError] = useState(false);
   const [pendingNeighborPostScope, setPendingNeighborPostScope] = useState(false);
+  const [isImageProcessing, setIsImageProcessing] = useState(false);
 
   const handleImageUpload = async (e) => {
     const selectedFiles = Array.from(e.target.files || []);
@@ -79,23 +104,20 @@ const PostWritePage = () => {
       return;
     }
 
-    const filesToAdd = selectedFiles.slice(0, remaining);
-
+    setIsImageProcessing(true);
     try {
-      const previews = await Promise.all(filesToAdd.map((file) => readFileAsDataUrl(file)));
-      const nextImages = filesToAdd.map((file, index) => ({
-        file,
-        preview: previews[index]
-      }));
-      setImages((prev) => [...prev, ...nextImages]);
-      if (selectedFiles.length > remaining) {
-        setErrorMessage('이미지는 최대 5장까지 첨부할 수 있어요.');
-      } else {
-        setErrorMessage('');
+      const { accepted, rejected, truncatedCount } = await prepareCommunityUploadFiles(selectedFiles, { remaining });
+
+      if (accepted.length > 0) {
+        setImages((prev) => [...prev, ...accepted]);
       }
+
+      const nextMessage = buildCommunityUploadSelectionMessage({ rejected, truncatedCount });
+      setErrorMessage(nextMessage || '');
     } catch (error) {
       setErrorMessage(error?.message || '이미지 처리에 실패했습니다.');
     } finally {
+      setIsImageProcessing(false);
       e.target.value = '';
     }
   };
@@ -105,43 +127,67 @@ const PostWritePage = () => {
       setPendingNeighborPostScope(true);
       setPostScope('all');
       setLocationSubmitError(true);
-      setErrorMessage('우리 동네 커뮤니티에 글을 올리려면 동네 설정이 필요해요.');
+      setCategorySubmitError(false);
+      setPlaceSubmitError(false);
+      setErrorMessage(LOCATION_SCOPE_REQUIRED_MESSAGE);
       setLocationModalOpen(true);
       return;
     }
 
     setPendingNeighborPostScope(false);
     setPostScope(nextScope === 'neighbor' ? 'neighbor' : 'all');
+    setCategorySubmitError(false);
+    setPlaceSubmitError(false);
     if (locationSubmitError) {
       setLocationSubmitError(false);
     }
-    if (errorMessage === '우리 동네 커뮤니티에 글을 올리려면 동네 설정이 필요해요.') {
+    if (
+      errorMessage === LOCATION_SCOPE_REQUIRED_MESSAGE
+      || errorMessage === CATEGORY_REQUIRED_MESSAGE
+      || errorMessage === SCOPE_CATEGORY_INVALID_MESSAGE
+      || errorMessage === LOCAL_REVIEW_PLACE_REQUIRED_MESSAGE
+    ) {
       setErrorMessage('');
     }
   };
 
   const handleSubmit = async () => {
-    if (isSubmitting) return;
+    if (isSubmitting || isImageProcessing) return;
     if (postScope === 'neighbor' && !hasUserLocation) {
       setLocationSubmitError(true);
-      setErrorMessage('우리 동네 커뮤니티에 글을 올리려면 동네 설정이 필요해요.');
+      setCategorySubmitError(false);
+      setPlaceSubmitError(false);
+      setErrorMessage(LOCATION_SCOPE_REQUIRED_MESSAGE);
       setLocationModalOpen(true);
       return;
     }
     if (!category) {
       setLocationSubmitError(false);
-      setErrorMessage('카테고리를 선택해주세요.');
+      setCategorySubmitError(true);
+      setPlaceSubmitError(false);
+      setErrorMessage(CATEGORY_REQUIRED_MESSAGE);
+      return;
+    }
+    if (category === 'local_review' && !isValidPlaceSelection(selectedPlace)) {
+      setLocationSubmitError(false);
+      setCategorySubmitError(false);
+      setPlaceSubmitError(true);
+      setErrorMessage(LOCAL_REVIEW_PLACE_REQUIRED_MESSAGE);
       return;
     }
     if (!title.trim() || !content.trim()) {
       setLocationSubmitError(false);
-      setErrorMessage('제목과 내용을 입력해주세요.');
+      setCategorySubmitError(false);
+      setPlaceSubmitError(false);
+      setErrorMessage(TITLE_CONTENT_REQUIRED_MESSAGE);
       return;
     }
 
     setIsSubmitting(true);
     setErrorMessage('');
     setLocationSubmitError(false);
+    setCategorySubmitError(false);
+    setPlaceSubmitError(false);
 
     try {
       const createResponse = await api.post('/boards/community/items', {
@@ -179,11 +225,25 @@ const PostWritePage = () => {
     } catch (error) {
       if (error?.code === 'BOARD_013') {
         setLocationSubmitError(true);
-        setErrorMessage('동네 인증 정보가 필요해요. 다시 동네를 설정해주세요.');
+        setCategorySubmitError(false);
+        setPlaceSubmitError(false);
+        setErrorMessage(LOCATION_AUTH_REFRESH_MESSAGE);
         setLocationModalOpen(true);
+      } else if (error?.code === 'BOARD_031') {
+        setLocationSubmitError(false);
+        setCategorySubmitError(false);
+        setPlaceSubmitError(true);
+        setErrorMessage(LOCAL_REVIEW_PLACE_REQUIRED_MESSAGE);
+      } else if (error?.code === 'BOARD_032') {
+        setLocationSubmitError(false);
+        setCategorySubmitError(true);
+        setPlaceSubmitError(false);
+        setErrorMessage(SCOPE_CATEGORY_INVALID_MESSAGE);
       } else {
         setLocationSubmitError(false);
-        setErrorMessage(error?.message || '글 작성에 실패했습니다.');
+        setCategorySubmitError(false);
+        setPlaceSubmitError(false);
+        setErrorMessage(mapCommunityUploadApiErrorMessage(error, '글 작성에 실패했습니다.'));
       }
     } finally {
       setIsSubmitting(false);
@@ -203,13 +263,13 @@ const PostWritePage = () => {
           </h1>
           <button
             onClick={handleSubmit}
-            disabled={isSubmitting}
-            className={`text-sm font-bold ${isSubmitting
+            disabled={isSubmitting || isImageProcessing}
+            className={`text-sm font-bold ${(isSubmitting || isImageProcessing)
               ? 'text-stone-300 dark:text-gray-600'
               : 'text-amber-500 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300'
               }`}
           >
-            {isSubmitting ? '등록 중...' : '완료'}
+            {isImageProcessing ? '이미지 준비 중...' : isSubmitting ? '등록 중...' : '완료'}
           </button>
         </div>
 
@@ -285,7 +345,10 @@ const PostWritePage = () => {
           {/* 2. 카테고리 선택 */}
           <div className="flex flex-col gap-2">
             <label className="text-[13px] font-bold text-stone-800 dark:text-gray-200 ml-1">어떤 이야기를 나누고 싶으신가요?</label>
-            <div className="flex gap-2 flex-wrap">
+            <div className={`flex gap-2 flex-wrap rounded-2xl p-2 -m-2 transition-colors border ${categorySubmitError
+              ? 'bg-rose-50 border-rose-100 dark:bg-rose-900/10 dark:border-rose-900/30'
+              : 'bg-transparent border-transparent'
+              }`}>
               {(postScope === 'neighbor' ? CATEGORIES.neighbor : CATEGORIES.all).map((cat) => {
                 const isSelected = category === cat;
                 const { label, icon: Icon, color } = categoryMeta[cat] || { label: cat, icon: Coffee, color: 'stone' };
@@ -328,7 +391,17 @@ const PostWritePage = () => {
                     key={cat}
                     onClick={() => {
                       setCategory(cat);
-                      if (cat !== 'local_review') setSelectedPlace(null);
+                      setCategorySubmitError(false);
+                      if (errorMessage === CATEGORY_REQUIRED_MESSAGE || errorMessage === SCOPE_CATEGORY_INVALID_MESSAGE) {
+                        setErrorMessage('');
+                      }
+                      if (cat !== 'local_review') {
+                        setSelectedPlace(null);
+                        setPlaceSubmitError(false);
+                        if (errorMessage === LOCAL_REVIEW_PLACE_REQUIRED_MESSAGE) {
+                          setErrorMessage('');
+                        }
+                      }
                     }}
                     className={`flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-[13px] font-bold border transition-all duration-200 ${colorStyles[color || 'orange']}`}
                   >
@@ -338,7 +411,7 @@ const PostWritePage = () => {
                 );
               })}
             </div>
-            {errorMessage === '카테고리를 선택해주세요.' && (
+            {categorySubmitError && errorMessage && (
               <p className="text-[13px] text-rose-500 ml-1 animate-pulse font-medium">{errorMessage}</p>
             )}
           </div>
@@ -373,6 +446,18 @@ const PostWritePage = () => {
                   </button>
                 </div>
               )}
+              {placeSubmitError && (
+                <div className="flex flex-wrap items-center gap-2 ml-1">
+                  <p className="text-[13px] font-bold text-rose-500">{LOCAL_REVIEW_PLACE_REQUIRED_MESSAGE}</p>
+                  <button
+                    type="button"
+                    onClick={() => setPlaceSearchModalOpen(true)}
+                    className="text-xs font-bold text-teal-700 hover:text-teal-800 dark:text-teal-300 dark:hover:text-teal-200 underline underline-offset-4"
+                  >
+                    장소 찾기
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -392,7 +477,7 @@ const PostWritePage = () => {
               className="w-full h-[280px] p-5 text-[15px] md:text-base text-stone-700 dark:text-gray-200 placeholder:text-stone-300 dark:placeholder:text-gray-500 bg-transparent focus:outline-none resize-none leading-relaxed"
             />
           </div>
-          {errorMessage && errorMessage !== '카테고리를 선택해주세요.' && (
+          {errorMessage && ![CATEGORY_REQUIRED_MESSAGE, LOCAL_REVIEW_PLACE_REQUIRED_MESSAGE, SCOPE_CATEGORY_INVALID_MESSAGE].includes(errorMessage) && (
             <div className="flex flex-wrap items-center gap-1.5 ml-1 mt-1">
               <AlertCircle className="w-4 h-4 text-rose-500" />
               <p className="text-[13px] font-bold text-rose-500">{errorMessage}</p>
@@ -413,11 +498,14 @@ const PostWritePage = () => {
             <div className="flex items-center gap-2 mb-3 ml-1 mt-2">
               <label className="text-[13px] font-bold text-stone-800 dark:text-gray-200">사진 첨부</label>
               <span className="text-[11px] font-bold text-stone-500 dark:text-gray-400 bg-stone-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">최대 5장</span>
+              {isImageProcessing && (
+                <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">이미지 최적화 중...</span>
+              )}
             </div>
             <div className="flex gap-3 overflow-x-auto py-1 no-scrollbar">
               {/* 사진 추가 버튼 */}
-              <label className={`w-20 h-20 rounded-2xl flex flex-col items-center justify-center gap-1.5 transition-all shrink-0 border ${images.length >= MAX_IMAGE_COUNT ? 'bg-stone-50 border-stone-200 opacity-50 cursor-not-allowed dark:bg-gray-800 dark:border-gray-700' : 'bg-stone-50 border-dashed border-stone-300 cursor-pointer hover:bg-stone-100 hover:border-stone-400 dark:bg-gray-800/80 dark:border-gray-600 dark:hover:bg-gray-700 dark:hover:border-gray-500'}`}>
-                <div className={`p-1.5 rounded-full mt-1 ${images.length >= MAX_IMAGE_COUNT ? 'bg-stone-200 text-stone-400 dark:bg-gray-700 dark:text-gray-500' : 'bg-white text-stone-400 shadow-sm border border-stone-100 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300'}`}>
+              <label className={`w-20 h-20 rounded-2xl flex flex-col items-center justify-center gap-1.5 transition-all shrink-0 border ${(images.length >= MAX_IMAGE_COUNT || isImageProcessing) ? 'bg-stone-50 border-stone-200 opacity-50 cursor-not-allowed dark:bg-gray-800 dark:border-gray-700' : 'bg-stone-50 border-dashed border-stone-300 cursor-pointer hover:bg-stone-100 hover:border-stone-400 dark:bg-gray-800/80 dark:border-gray-600 dark:hover:bg-gray-700 dark:hover:border-gray-500'}`}>
+                <div className={`p-1.5 rounded-full mt-1 ${(images.length >= MAX_IMAGE_COUNT || isImageProcessing) ? 'bg-stone-200 text-stone-400 dark:bg-gray-700 dark:text-gray-500' : 'bg-white text-stone-400 shadow-sm border border-stone-100 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300'}`}>
                   <ImageIcon className="w-4 h-4" />
                 </div>
                 <span className="text-[11px] text-stone-400 dark:text-gray-500 font-medium">
@@ -425,11 +513,11 @@ const PostWritePage = () => {
                 </span>
                 <input
                   type="file"
-                  accept="image/*"
+                  accept={COMMUNITY_UPLOAD_ACCEPT}
                   multiple
                   className="hidden"
                   onChange={handleImageUpload}
-                  disabled={images.length >= MAX_IMAGE_COUNT}
+                  disabled={images.length >= MAX_IMAGE_COUNT || isImageProcessing}
                 />
               </label>
 
@@ -479,7 +567,13 @@ const PostWritePage = () => {
       <PlaceSearchModal
         isOpen={placeSearchModalOpen}
         onClose={() => setPlaceSearchModalOpen(false)}
-        onSelect={(place) => setSelectedPlace(place)}
+        onSelect={(place) => {
+          setSelectedPlace(place);
+          setPlaceSubmitError(false);
+          if (errorMessage === LOCAL_REVIEW_PLACE_REQUIRED_MESSAGE) {
+            setErrorMessage('');
+          }
+        }}
       />
     </div>
   );

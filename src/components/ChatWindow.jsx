@@ -1,10 +1,26 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Send, Bot, Sparkles } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { X, Send, Bot, Sparkles, ThumbsUp, ThumbsDown } from 'lucide-react';
 import useStore from '../store/useStore';
 import { normalizeMarkdownText } from '../utils/markdownFormatter';
 
 const CHAT_MESSAGE_MAX_LENGTH = 2000;
 const CHAT_INPUT_MAX_HEIGHT = 11.5 * 16; // 6 rows (approx)
+const CHAT_FEEDBACK_REASON_OPTIONS = [
+  { code: 'INCORRECT', label: '부정확함' },
+  { code: 'UNCLEAR', label: '설명이 모호함' },
+  { code: 'NOT_HELPFUL', label: '도움이 안 됨' },
+  { code: 'OUTDATED', label: '정보가 오래됨' },
+  { code: 'SAFETY_CONCERN', label: '안전 우려' },
+  { code: 'OTHER', label: '기타' },
+];
+const CHAT_SOURCE_TYPE_LABEL = {
+  PROFILE: '프로필',
+  GROWTH_HISTORY: '성장기록',
+  KNOWLEDGE_BASE: '지식베이스',
+  PUBLIC_API: '검색/공공데이터',
+  SYSTEM_POLICY: '안전정책',
+};
 
 // =================================================================
 // 1. 메인 채팅 창 컴포넌트
@@ -19,7 +35,11 @@ const ChatWindow = () => {
     openChatWithQuery,
     addUserMessage,
     generateAiResponse,
+    submitAiChatFeedback,
+    markChatMessageFeedbackStatus,
     isAiThinking,
+    aiChatMetaUiEnabled,
+    aiChatFeedbackEnabled,
     aiContextMode,
     manualProfileContext,
     setAiContextMode,
@@ -30,8 +50,11 @@ const ChatWindow = () => {
 
   const [input, setInput] = useState('');
   const [isPanelVisible, setIsPanelVisible] = useState(isChatOpen);
+  const [downvoteTargetId, setDownvoteTargetId] = useState(null);
+  const [feedbackSubmittingId, setFeedbackSubmittingId] = useState(null);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const navigate = useNavigate();
 
   const isNearMessageLimit = input.length >= 1800;
   const isMessageDisabled = isAiThinking || !input.trim();
@@ -128,15 +151,20 @@ const ChatWindow = () => {
       && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     if (prefersReducedMotion) {
-      setIsPanelVisible(isChatOpen);
-      return;
+      let frameId = 0;
+      frameId = window.requestAnimationFrame(() => {
+        setIsPanelVisible(isChatOpen);
+      });
+      return () => {
+        window.cancelAnimationFrame(frameId);
+      };
     }
 
     if (isChatOpen) {
-      setIsPanelVisible(false);
       let frameId = 0;
       let nestedFrameId = 0;
       frameId = window.requestAnimationFrame(() => {
+        setIsPanelVisible(false);
         nestedFrameId = window.requestAnimationFrame(() => {
           setIsPanelVisible(true);
         });
@@ -148,8 +176,13 @@ const ChatWindow = () => {
       };
     }
 
-    setIsPanelVisible(false);
-    return undefined;
+    let closeFrameId = 0;
+    closeFrameId = window.requestAnimationFrame(() => {
+      setIsPanelVisible(false);
+    });
+    return () => {
+      window.cancelAnimationFrame(closeFrameId);
+    };
   }, [isChatOpen]);
 
   const handleInputChange = (e) => {
@@ -180,6 +213,222 @@ const ChatWindow = () => {
       intentHint: action.intentHint,
       requestedProfileDomains: action.requestedProfileDomains
     });
+  };
+
+  const executeMetaAction = (action) => {
+    if (!action || isAiThinking) return;
+    const actionType = action.action_type || action.actionType;
+    if (actionType === 'NAVIGATE' && action.route) {
+      navigate(action.route);
+      return;
+    }
+    if (actionType === 'OPEN_CHAT_QUERY' && action.query) {
+      openChatWithQuery(action.query, {
+        intentHint: action.intent_hint || action.intentHint || undefined,
+        requestedProfileDomains: action.requested_profile_domains || action.requestedProfileDomains || []
+      });
+    }
+  };
+
+  const submitFeedback = async ({ message, rating, reasonCode = null }) => {
+    if (!message || message.role !== 'ai' || !aiChatFeedbackEnabled || feedbackSubmittingId) return;
+
+    const meta = message.meta || {};
+    const responseMode = meta.response_mode || 'ANSWER';
+    const requestId = message.requestId || meta.request_id || null;
+    if (!requestId && !message.meta?.request_id) {
+      markChatMessageFeedbackStatus(message.id, 'error');
+      return;
+    }
+
+    setFeedbackSubmittingId(message.id);
+    if (rating === 'DOWN') {
+      setDownvoteTargetId(null);
+    }
+
+    markChatMessageFeedbackStatus(message.id, 'submitting');
+    const result = await submitAiChatFeedback({
+      session_id: message.sessionId || undefined,
+      request_id: requestId,
+      rating,
+      reason_code: reasonCode,
+      reason_detail: null,
+      response_mode: responseMode,
+      intent: meta.intent || null,
+      is_first_ai_answer: false,
+    });
+
+    markChatMessageFeedbackStatus(message.id, result.success ? (rating === 'UP' ? 'up' : 'down') : 'error');
+    setFeedbackSubmittingId(null);
+  };
+
+  const canShowFeedbackForMessage = (msg, index) => {
+    if (!aiChatFeedbackEnabled || !aiChatMetaUiEnabled) return false;
+    if (!msg || msg.role !== 'ai') return false;
+    if (index === 0) return false; // 초기 인사 제외
+    const responseMode = msg.meta?.response_mode || 'ANSWER';
+    return responseMode === 'ANSWER' || responseMode === 'FALLBACK';
+  };
+
+  const renderMessageMeta = (msg, index) => {
+    if (!aiChatMetaUiEnabled || msg.role !== 'ai' || !msg.meta) return null;
+    const meta = msg.meta;
+    const responseMode = meta.response_mode || 'ANSWER';
+    const citations = Array.isArray(meta.citations) ? meta.citations : [];
+    const quickActions = Array.isArray(meta.quick_actions) ? meta.quick_actions : [];
+    const followUps = Array.isArray(meta.follow_up_questions) ? meta.follow_up_questions : [];
+    const clarificationOptions = Array.isArray(meta.clarification?.options) ? meta.clarification.options : [];
+    const shouldShowFeedback = canShowFeedbackForMessage(msg, index);
+    const feedbackStatus = msg.feedbackStatus;
+    const isFeedbackSubmitting = feedbackSubmittingId === msg.id || feedbackStatus === 'submitting';
+    const showDownvoteReasons = downvoteTargetId === msg.id && !isFeedbackSubmitting && feedbackStatus !== 'down';
+
+    if (
+      !citations.length
+      && !quickActions.length
+      && !followUps.length
+      && !clarificationOptions.length
+      && !meta.clarification?.question
+      && !shouldShowFeedback
+    ) {
+      return null;
+    }
+
+    return (
+      <div className="mt-3 space-y-2">
+        {meta.clarification?.question && (
+          <div className="rounded-xl border border-amber-200/80 bg-amber-50/80 dark:bg-amber-500/10 dark:border-amber-400/30 px-3 py-2">
+            <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">{meta.clarification.question}</p>
+          </div>
+        )}
+
+        {clarificationOptions.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {clarificationOptions.map((action) => (
+              <button
+                key={`clarify-${msg.id}-${action.id}`}
+                type="button"
+                onClick={() => executeMetaAction(action)}
+                disabled={isAiThinking}
+                className="inline-flex items-center rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:bg-slate-800 dark:border-amber-400/30 dark:text-amber-200"
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {quickActions.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {quickActions.map((action) => (
+              <button
+                key={`action-${msg.id}-${action.id}`}
+                type="button"
+                onClick={() => executeMetaAction(action)}
+                disabled={isAiThinking}
+                className={`inline-flex items-center rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors disabled:opacity-50 ${
+                  responseMode === 'FALLBACK'
+                    ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-200'
+                    : 'border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100 dark:border-slate-600 dark:bg-slate-700/50 dark:text-slate-100'
+                }`}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {followUps.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {followUps.map((question, qIndex) => (
+              <button
+                key={`follow-${msg.id}-${qIndex}`}
+                type="button"
+                onClick={() => executeMetaAction({ action_type: 'OPEN_CHAT_QUERY', query: question, intent_hint: meta.intent })}
+                disabled={isAiThinking}
+                className="inline-flex items-center rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-stone-600 hover:bg-stone-50 disabled:opacity-50 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-200"
+              >
+                {question}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {citations.length > 0 && (
+          <div className="rounded-xl border border-stone-200/80 bg-stone-50/70 dark:bg-slate-900/60 dark:border-slate-700 px-3 py-2">
+            <p className="text-[10px] font-bold tracking-wide text-stone-500 dark:text-slate-400 mb-1">근거/참고</p>
+            <div className="space-y-1">
+              {citations.map((citation, cIndex) => (
+                <div key={`citation-${msg.id}-${cIndex}`} className="text-[11px] text-stone-600 dark:text-slate-300 leading-snug">
+                  <span className="font-semibold">{citation.label}</span>
+                  <span className="ml-1 text-stone-400 dark:text-slate-500">
+                    {CHAT_SOURCE_TYPE_LABEL[citation.source_type] || citation.source_type}
+                  </span>
+                  {citation.basis_date ? (
+                    <span className="ml-1 text-stone-400 dark:text-slate-500">기준일 {citation.basis_date}</span>
+                  ) : null}
+                  {citation.note ? (
+                    <span className="block text-stone-500 dark:text-slate-400">{citation.note}</span>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {shouldShowFeedback && (
+          <div className="pt-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-semibold text-stone-500 dark:text-slate-400">도움이 되었나요?</span>
+              <button
+                type="button"
+                onClick={() => submitFeedback({ message: msg, rating: 'UP' })}
+                disabled={isFeedbackSubmitting || feedbackStatus === 'up' || feedbackStatus === 'down'}
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold ${
+                  feedbackStatus === 'up'
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-500/10 dark:text-emerald-200'
+                    : 'border-stone-200 text-stone-600 hover:bg-stone-50 dark:border-slate-600 dark:text-slate-200'
+                } disabled:opacity-60`}
+              >
+                <ThumbsUp className="w-3 h-3" />
+                좋아요
+              </button>
+              <button
+                type="button"
+                onClick={() => setDownvoteTargetId((prev) => (prev === msg.id ? null : msg.id))}
+                disabled={isFeedbackSubmitting || feedbackStatus === 'up' || feedbackStatus === 'down'}
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold ${
+                  feedbackStatus === 'down'
+                    ? 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-400/40 dark:bg-rose-500/10 dark:text-rose-200'
+                    : 'border-stone-200 text-stone-600 hover:bg-stone-50 dark:border-slate-600 dark:text-slate-200'
+                } disabled:opacity-60`}
+              >
+                <ThumbsDown className="w-3 h-3" />
+                아쉬워요
+              </button>
+              {feedbackStatus === 'error' && (
+                <span className="text-[10px] text-rose-600 dark:text-rose-300">전송 실패</span>
+              )}
+            </div>
+            {showDownvoteReasons && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {CHAT_FEEDBACK_REASON_OPTIONS.map((option) => (
+                  <button
+                    key={`reason-${msg.id}-${option.code}`}
+                    type="button"
+                    onClick={() => submitFeedback({ message: msg, rating: 'DOWN', reasonCode: option.code })}
+                    disabled={isFeedbackSubmitting}
+                    className="rounded-full border border-rose-200 bg-white px-2 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-50 dark:bg-slate-800 dark:border-rose-400/30 dark:text-rose-200 disabled:opacity-60"
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -231,7 +480,10 @@ const ChatWindow = () => {
                   {msg.role === 'user' ? (
                     <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
                   ) : (
-                    <p className="whitespace-pre-wrap leading-relaxed">{normalizeMarkdownText(msg.text || '')}</p>
+                    <div>
+                      <p className="whitespace-pre-wrap leading-relaxed">{normalizeMarkdownText(msg.text || '')}</p>
+                      {renderMessageMeta(msg, index)}
+                    </div>
                   )}
                 </div>
               </div>

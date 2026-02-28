@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:chat-markdown": "node --test tests/chat-markdown-format.test.mjs"
+    "test:chat-markdown": "node --test tests/chat-markdown-format.test.mjs",
+    "test:community-policy-e2e": "scripts/community-policy-e2e.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",
