@@ -29,6 +29,50 @@ pw() {
   "$PWCLI" "$@"
 }
 
+wait_for_front_ready() {
+  local retries="${FRONT_READY_RETRIES:-30}"
+  local delay="${FRONT_READY_DELAY_SEC:-1}"
+
+  for ((i=1; i<=retries; i++)); do
+    if curl -sS -m 3 "${FRONT_URL}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "${delay}"
+  done
+
+  echo "frontend is not reachable: ${FRONT_URL}"
+  echo "start frontend first: npm run dev -- --host 127.0.0.1 --port 5173"
+  return 1
+}
+
+wait_for_api_ready() {
+  local retries="${API_READY_RETRIES:-30}"
+  local delay="${API_READY_DELAY_SEC:-1}"
+
+  for ((i=1; i<=retries; i++)); do
+    local body=""
+    body=$(curl -sS -m 3 -H "Authorization: Bearer ${DEV_BYPASS_TOKEN}" \
+      "${API_BASE_URL}/api/members/me" 2>/dev/null || true)
+
+    if [[ "$body" == *"\"status\":\"success\""* ]]; then
+      return 0
+    fi
+
+    if [[ "$body" == *"\"code\":\"AUTH_009\""* ]]; then
+      echo "api is reachable but DEV_BYPASS_TOKEN is invalid for backend."
+      echo "expected backend env: AUTH_DEV_BYPASS_TOKEN=${DEV_BYPASS_TOKEN}"
+      return 1
+    fi
+
+    sleep "${delay}"
+  done
+
+  echo "backend api is not reachable: ${API_BASE_URL}"
+  echo "start backend with dev bypass token, e.g."
+  echo "AUTH_DEV_BYPASS_TOKEN=${DEV_BYPASS_TOKEN} ./gradlew bootRun"
+  return 1
+}
+
 SEED_POST_IDS=()
 
 register_seed_post() {
@@ -199,6 +243,10 @@ WITH_LOCATION='{"state":{"isLoggedIn":true,"user":{"id":"00000000-0000-0000-0000
 WITHOUT_LOCATION='{"state":{"isLoggedIn":true,"user":{"id":"00000000-0000-0000-0000-000000000001","name":"개발 테스트 사용자","regionName":"","regionCode":"","postcode":""},"token":"__TOKEN__","isDarkMode":false,"children":[],"activeChildId":null,"events":[]},"version":0}'
 WITH_LOCATION="${WITH_LOCATION/__TOKEN__/$DEV_BYPASS_TOKEN}"
 WITHOUT_LOCATION="${WITHOUT_LOCATION/__TOKEN__/$DEV_BYPASS_TOKEN}"
+
+log "wait for frontend/api readiness"
+wait_for_front_ready
+wait_for_api_ready
 
 log "seeding editable posts"
 ALL_POST_ID=$(create_post '{"title":"[E2E] all edit","content":"all scope edit seed","category":"daily","postScope":"all"}')

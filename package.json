@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:chat-markdown": "node --test tests/chat-markdown-format.test.mjs",
-    "test:community-policy-e2e": "scripts/community-policy-e2e.sh"
+    "test:community-policy-e2e": "scripts/community-policy-e2e.sh",
+    "test:community-policy-e2e:local": "scripts/run-community-policy-e2e-local.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",
