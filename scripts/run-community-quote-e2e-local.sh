@@ -10,8 +10,8 @@ API_BASE_URL="${API_BASE_URL:-http://127.0.0.1:8080}"
 FRONT_URL="${FRONT_URL:-http://127.0.0.1:5173}"
 BACKEND_PORT="${BACKEND_PORT:-8080}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
-BACKEND_LOG="${BACKEND_LOG:-/tmp/community-policy-backend.log}"
-FRONTEND_LOG="${FRONTEND_LOG:-/tmp/community-policy-frontend.log}"
+BACKEND_LOG="${BACKEND_LOG:-/tmp/community-quote-backend.log}"
+FRONTEND_LOG="${FRONTEND_LOG:-/tmp/community-quote-frontend.log}"
 VITE_API_BASE_URL="${VITE_API_BASE_URL:-$API_BASE_URL}"
 
 if [[ ! -d "$BACKEND_DIR" ]]; then
@@ -20,7 +20,7 @@ if [[ ! -d "$BACKEND_DIR" ]]; then
 fi
 
 log() {
-  printf '[community-e2e-local] %s\n' "$*"
+  printf '[community-quote-e2e-local] %s\n' "$*"
 }
 
 is_listening() {
@@ -89,6 +89,6 @@ log "run e2e"
   API_BASE_URL="$API_BASE_URL" \
   FRONT_URL="$FRONT_URL" \
   DEV_BYPASS_TOKEN="$DEV_BYPASS_TOKEN" \
-  ./scripts/community-policy-e2e.sh
+  ./scripts/community-quote-navigation-e2e.sh
 )
 log "done"

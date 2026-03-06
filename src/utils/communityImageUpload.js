@@ -1,6 +1,9 @@
 const MAX_LONG_EDGE = 1080;
-const JPEG_QUALITY = 0.8;
-const WEBP_QUALITY = 0.8;
+const JPEG_QUALITY_HIGH = 0.82;
+const JPEG_QUALITY_MEDIUM = 0.76;
+const JPEG_QUALITY_LOW = 0.7;
+const JPEG_QUALITY_MIN = 0.62;
+const TARGET_JPEG_BYTES = 1_600_000;
 
 export const COMMUNITY_ALLOWED_UPLOAD_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 export const COMMUNITY_LEGACY_DISPLAY_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'];
@@ -88,7 +91,7 @@ const loadImageBitmap = async (file) => {
     let bitmap;
     try {
       bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
-    } catch (_) {
+    } catch {
       // Older browsers may reject options; fallback keeps compatibility.
       bitmap = await createImageBitmap(file);
     }
@@ -219,29 +222,22 @@ export const compressCommunityImage = async (file, options = {}) => {
 
   try {
     const targetSize = getTargetSize(imageSource.width, imageSource.height, maxLongEdge);
-    const isPng = extension === 'png';
-    const outputMimeType = isPng ? 'image/png' : mimeType === 'image/webp' ? 'image/webp' : 'image/jpeg';
-    const outputQuality = outputMimeType === 'image/webp' ? WEBP_QUALITY : JPEG_QUALITY;
-
-    if (isPng && !targetSize.resized) {
-      return {
-        file,
-        originalSize: file.size,
-        processedSize: file.size,
-        wasCompressed: false,
-        skippedCompression: true,
-        mimeType,
-        extension,
-      };
-    }
+    const keepsAlpha = extension === 'png';
+    const pixelCount = targetSize.width * targetSize.height;
+    const megapixels = pixelCount / 1_000_000;
+    const adaptiveJpegQuality = megapixels >= 2.5
+      ? JPEG_QUALITY_LOW
+      : megapixels >= 1.2
+        ? JPEG_QUALITY_MEDIUM
+        : JPEG_QUALITY_HIGH;
 
     const canvas = createCanvas(targetSize.width, targetSize.height);
-    const ctx = canvas.getContext('2d', { alpha: isPng });
+    const ctx = canvas.getContext('2d', { alpha: keepsAlpha });
     if (!ctx) {
       throw new Error('이미지 압축을 위한 캔버스를 준비하지 못했어요.');
     }
 
-    if (!isPng) {
+    if (!keepsAlpha) {
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, targetSize.width, targetSize.height);
     }
@@ -249,18 +245,25 @@ export const compressCommunityImage = async (file, options = {}) => {
     imageSource.draw(ctx, targetSize.width, targetSize.height);
 
     let blob;
-    try {
-      blob = await canvasToBlob(canvas, outputMimeType, outputQuality);
-    } catch (error) {
-      if (mimeType === 'image/webp') {
-        blob = await canvasToBlob(canvas, 'image/jpeg', JPEG_QUALITY);
-      } else {
-        throw error;
+    if (keepsAlpha) {
+      blob = await canvasToBlob(canvas, 'image/png');
+    } else {
+      let quality = adaptiveJpegQuality;
+      blob = await canvasToBlob(canvas, 'image/jpeg', quality);
+
+      while (blob.size > TARGET_JPEG_BYTES && quality > JPEG_QUALITY_MIN) {
+        quality = Math.max(JPEG_QUALITY_MIN, quality - 0.06);
+        const nextBlob = await canvasToBlob(canvas, 'image/jpeg', quality);
+        if (nextBlob.size >= blob.size) {
+          break;
+        }
+        blob = nextBlob;
       }
     }
 
-    let actualMimeType = blob.type || outputMimeType;
-    actualMimeType = normalizeMime(actualMimeType) || outputMimeType;
+    const defaultMimeType = keepsAlpha ? 'image/png' : 'image/jpeg';
+    let actualMimeType = blob.type || defaultMimeType;
+    actualMimeType = normalizeMime(actualMimeType) || defaultMimeType;
 
     if (blob.size >= file.size) {
       return {

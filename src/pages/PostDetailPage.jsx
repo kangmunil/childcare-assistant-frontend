@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, MoreHorizontal, Heart, MessageSquare, Share2, User, Send, Trash2, Edit3, X, MapPin, Crown, AlertCircle, Lock, Globe, CheckCircle2, RotateCcw } from 'lucide-react';
+import { ArrowLeft, MoreHorizontal, Heart, Repeat2, MessageSquare, Share2, PenLine, User, Send, Trash2, Edit3, X, MapPin, Crown, AlertCircle, Lock, Globe, CheckCircle2, RotateCcw } from 'lucide-react';
 import api from '../lib/api';
 import { getLocalLikeMap, setLocalLike } from '../lib/likeStorage';
 import { useAuth } from '../contexts/AuthContext';
@@ -28,6 +28,14 @@ const getPostScopeBadgeMeta = (postScope) => {
   };
 };
 
+const REPORT_REASON_OPTIONS = [
+  { value: 'spam', label: '스팸/홍보' },
+  { value: 'abuse', label: '욕설/비방' },
+  { value: 'sexual', label: '음란/유해 콘텐츠' },
+  { value: 'privacy', label: '개인정보 노출' },
+  { value: 'other', label: '기타' },
+];
+
 const PostDetailPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -36,6 +44,8 @@ const PostDetailPage = () => {
   const passedSlug = location.state?.boardSlug;
   const isAuthenticated = Boolean(user);
   const [isLikeLoading, setIsLikeLoading] = useState(false);
+  const [isRepostLoading, setIsRepostLoading] = useState(false);
+  const [showRepostMenu, setShowRepostMenu] = useState(false);
   const [commentInput, setCommentInput] = useState('');
   const [replyTarget, setReplyTarget] = useState(null);
   const [replyInput, setReplyInput] = useState('');
@@ -46,10 +56,16 @@ const PostDetailPage = () => {
   const [openCommentMenuId, setOpenCommentMenuId] = useState(null);
   const [showPostMenu, setShowPostMenu] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [isReportSubmitting, setIsReportSubmitting] = useState(false);
+  const [reportReason, setReportReason] = useState(REPORT_REASON_OPTIONS[0].value);
+  const [reportDetail, setReportDetail] = useState('');
   const [isSecret, setIsSecret] = useState(false);
   const [isReplySecret, setIsReplySecret] = useState(false);
   const commentTextareaRef = useRef(null);
   const replyTextareaRef = useRef(null);
+  const editTextareaRef = useRef(null);
+  const commentSectionRef = useRef(null);
   const commentLikeLoadingRef = useRef(new Set());
   const commentMenuFirstActionRef = useRef(null);
   const commentMenuCloseTimerRef = useRef(null);
@@ -103,7 +119,10 @@ const PostDetailPage = () => {
       return {
         ...data,
         likeCount: data?.likeCount ?? 0,
-        liked: data?.liked ?? localLikeMap[id] ?? false
+        liked: data?.liked ?? localLikeMap[id] ?? false,
+        repostCount: data?.repostCount ?? 0,
+        reposted: data?.reposted ?? false,
+        reported: data?.reported ?? false,
       };
     },
     enabled: Boolean(id),
@@ -118,6 +137,10 @@ const PostDetailPage = () => {
   useEffect(() => {
     autoResize(replyTextareaRef.current, 2);
   }, [replyInput, replyTarget]);
+
+  useEffect(() => {
+    autoResize(editTextareaRef.current, 4);
+  }, [editingCommentId, editingContent]);
 
   const {
     data: commentsData,
@@ -140,6 +163,28 @@ const PostDetailPage = () => {
   const postRegionLabels = useMemo(() => getRegionLabels(post?.regUserRegionName), [post?.regUserRegionName]);
   const postScopeBadge = useMemo(() => getPostScopeBadgeMeta(post?.postScope), [post?.postScope]);
   const isUrgentPost = useMemo(() => String(post?.category || '').toLowerCase() === 'urgent', [post?.category]);
+  const isPlaceReviewPost = useMemo(() => {
+    const normalizedCategory = String(post?.category || '').toLowerCase();
+    return normalizedCategory === 'local_review' || normalizedCategory === 'hospital';
+  }, [post?.category]);
+  const placeName = useMemo(() => {
+    if (typeof post?.placeName !== 'string') return '';
+    return post.placeName.trim();
+  }, [post?.placeName]);
+  const placeAddress = useMemo(() => {
+    if (typeof post?.placeAddress !== 'string') return '';
+    return post.placeAddress.trim();
+  }, [post?.placeAddress]);
+  const hasPlaceInfo = useMemo(() => isPlaceReviewPost && Boolean(placeName), [isPlaceReviewPost, placeName]);
+  const placeMapHref = useMemo(() => {
+    if (!hasPlaceInfo) return '';
+    const lat = Number(post?.placeLat);
+    const lng = Number(post?.placeLng);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return `https://map.kakao.com/link/map/${encodeURIComponent(placeName)},${lat},${lng}`;
+    }
+    return `https://map.kakao.com/link/search/${encodeURIComponent(placeName)}`;
+  }, [hasPlaceInfo, placeName, post?.placeLat, post?.placeLng]);
 
   useEffect(() => {
     if (!openCommentMenuId) return;
@@ -169,6 +214,30 @@ const PostDetailPage = () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [openCommentMenuId]);
+
+  useEffect(() => {
+    if (!showRepostMenu) return undefined;
+
+    const handlePointerDown = (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest('[data-detail-repost-menu]') || target.closest('[data-detail-repost-trigger]')) return;
+      setShowRepostMenu(false);
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setShowRepostMenu(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown, true);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown, true);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showRepostMenu]);
 
   useEffect(() => {
     if (!openCommentMenuId) return undefined;
@@ -241,11 +310,12 @@ const PostDetailPage = () => {
         const posterVariant = getCommunityImageVariantSet(file, 'poster');
         const preferredOptimizedUrl = getCommunityPreferredVariantUrl(file, 'detail')
           || getCommunityPreferredVariantUrl(file, 'poster');
+        const fallbackDisplayUrl = file?.downloadUrl || directPath || preferredOptimizedUrl;
         const width = detailVariant?.width || posterVariant?.width || null;
         const height = detailVariant?.height || posterVariant?.height || null;
         return {
           id: file?.id,
-          url: preferredOptimizedUrl || file?.downloadUrl || directPath,
+          url: fallbackDisplayUrl,
           detailVariant,
           posterVariant,
           width,
@@ -327,6 +397,17 @@ const PostDetailPage = () => {
     }
 
     return error?.message || (actionType === 'delete' ? '댓글 삭제에 실패했습니다.' : '댓글 수정에 실패했습니다.');
+  };
+
+  const getReportErrorMessage = (error) => {
+    const code = error?.code || error?.payload?.code;
+    if (code === 'BOARD_036') {
+      return '이미 신고한 게시글입니다.';
+    }
+    if (code === 'BOARD_037') {
+      return '신고 사유를 확인해주세요.';
+    }
+    return error?.message || '게시글 신고에 실패했습니다.';
   };
 
   const isCommentLikeAvailable = (comment) => (
@@ -837,14 +918,219 @@ const PostDetailPage = () => {
     });
   };
 
+  const updateRepostCache = ({ targetId, repostCount, reposted }) => {
+    const safeTargetId = toNumericId(targetId);
+    if (safeTargetId === null) return;
+
+    queryClient.setQueriesData({ queryKey: ['community', 'detail'] }, (old) => {
+      if (!old || typeof old !== 'object') return old;
+      if (toNumericId(old.id) !== safeTargetId) return old;
+      return {
+        ...old,
+        repostCount,
+        reposted
+      };
+    });
+
+    queryClient.setQueriesData({ queryKey: ['community'] }, (old) => {
+      if (!old || Array.isArray(old)) return old;
+      const hasList = Array.isArray(old.items) || Array.isArray(old.fixedItems) || Array.isArray(old.popularItems);
+      if (!hasList) return old;
+
+      const updateItems = (items) => (
+        Array.isArray(items)
+          ? items.map((item) => (
+            toNumericId(item.id) === safeTargetId
+              ? { ...item, repostCount, reposted }
+              : item
+          ))
+          : items
+      );
+
+      return {
+        ...old,
+        items: updateItems(old.items),
+        fixedItems: updateItems(old.fixedItems),
+        popularItems: updateItems(old.popularItems)
+      };
+    });
+  };
+
+  const updateReportedCache = ({ targetId, reported }) => {
+    const safeTargetId = toNumericId(targetId);
+    if (safeTargetId === null) return;
+
+    queryClient.setQueriesData({ queryKey: ['community', 'detail'] }, (old) => {
+      if (!old || typeof old !== 'object') return old;
+      if (toNumericId(old.id) !== safeTargetId) return old;
+      return {
+        ...old,
+        reported
+      };
+    });
+
+    queryClient.setQueriesData({ queryKey: ['community'] }, (old) => {
+      if (!old || Array.isArray(old)) return old;
+      const hasList = Array.isArray(old.items) || Array.isArray(old.fixedItems) || Array.isArray(old.popularItems);
+      if (!hasList) return old;
+
+      const updateItems = (items) => (
+        Array.isArray(items)
+          ? items.map((item) => (
+            toNumericId(item.id) === safeTargetId
+              ? { ...item, reported }
+              : item
+          ))
+          : items
+      );
+
+      return {
+        ...old,
+        items: updateItems(old.items),
+        fixedItems: updateItems(old.fixedItems),
+        popularItems: updateItems(old.popularItems)
+      };
+    });
+  };
+
+  const reportMutation = useMutation({
+    mutationFn: (payload) => api.post(`/boards/${post?.boardSlug || passedSlug || 'community'}/items/${id}/report`, payload),
+    onMutate: () => {
+      setIsReportSubmitting(true);
+    },
+    onSuccess: async () => {
+      updateReportedCache({ targetId: post?.id, reported: true });
+      setShowPostMenu(false);
+      setShowReportModal(false);
+      setReportReason(REPORT_REASON_OPTIONS[0].value);
+      setReportDetail('');
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['community', 'detail', id] }),
+        queryClient.invalidateQueries({ queryKey: ['community'] }),
+      ]);
+      alert('게시글 신고가 접수되었습니다.');
+    },
+    onError: (error) => {
+      alert(getReportErrorMessage(error));
+    },
+    onSettled: () => {
+      setIsReportSubmitting(false);
+    }
+  });
+
+  const handleSubmitReport = () => {
+    if (!isAuthenticated) {
+      alert('로그인 후 신고할 수 있어요.');
+      return;
+    }
+    if (!post || reportMutation.isPending || isReportSubmitting) return;
+    if (post.reported) {
+      alert('이미 신고한 게시글입니다.');
+      return;
+    }
+    reportMutation.mutate({
+      reasonCode: reportReason,
+      reasonDetail: reportDetail.trim() || null
+    });
+  };
+
+  const handleSharePost = async () => {
+    if (!post) return;
+    const url = typeof window !== 'undefined' ? window.location.href : '';
+    const text = post?.content ? String(post.content).slice(0, 80) : post?.title || '';
+
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+        await navigator.share({
+          title: post?.title || '커뮤니티 게시글',
+          text,
+          url
+        });
+        alert('게시글을 공유했어요.');
+        return;
+      }
+
+      if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(url);
+        alert('게시글 링크를 복사했어요.');
+        return;
+      }
+
+      throw new Error('공유를 지원하지 않는 환경입니다.');
+    } catch (error) {
+      if (error?.name === 'AbortError') return;
+      alert(error?.message || '공유에 실패했습니다.');
+    }
+  };
+
+  const handleScrollToComments = () => {
+    if (!commentSectionRef.current) return;
+    commentSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    if (isAuthenticated) {
+      window.requestAnimationFrame(() => {
+        commentTextareaRef.current?.focus();
+      });
+    }
+  };
+
   const handleToggleUrgentResolved = () => {
     if (!canToggleUrgentResolved || toggleUrgentResolveMutation.isPending) return;
-    const nextResolved = !Boolean(post?.urgentResolved);
+    const nextResolved = !post?.urgentResolved;
     toggleUrgentResolveMutation.mutate(nextResolved);
     setShowPostMenu(false);
   };
 
+  const handleToggleRepost = async () => {
+    if (!post || isRepostLoading) return;
+    if (!isAuthenticated) {
+      alert('로그인 후 재게시할 수 있어요.');
+      return;
+    }
+
+    const wasReposted = !!post.reposted;
+    const previousCount = Number.isFinite(post.repostCount) ? post.repostCount : 0;
+    const nextCount = Math.max(0, previousCount + (wasReposted ? -1 : 1));
+
+    setIsRepostLoading(true);
+    updateRepostCache({ targetId: post.id, repostCount: nextCount, reposted: !wasReposted });
+
+    try {
+      const response = wasReposted
+        ? await api.delete(`/boards/${post?.boardSlug || passedSlug || 'community'}/items/${post.id}/repost`)
+        : await api.post(`/boards/${post?.boardSlug || passedSlug || 'community'}/items/${post.id}/repost`);
+      const data = response?.data ?? response;
+      const finalCount = Number.isFinite(data) ? data : nextCount;
+      updateRepostCache({ targetId: post.id, repostCount: finalCount, reposted: !wasReposted });
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['community'] }),
+        queryClient.invalidateQueries({ queryKey: ['community', 'detail', id] }),
+        queryClient.invalidateQueries({ queryKey: ['community', 'highlights'] }),
+      ]);
+    } catch {
+      updateRepostCache({ targetId: post.id, repostCount: previousCount, reposted: wasReposted });
+    } finally {
+      setIsRepostLoading(false);
+    }
+  };
+
+  const handleOpenQuotedPost = () => {
+    if (!post) return;
+    const quotePostId = post?.quotePreview?.id || post?.quoteOfItemId;
+    if (!quotePostId || post?.quotePreview?.unavailable) return;
+
+    navigate(
+      `/community/${quotePostId}${location.search || ''}`,
+      { state: { boardSlug: post?.boardSlug || passedSlug || 'community' } }
+    );
+  };
+
   const errorMessage = postError?.message || '';
+  const errorCode = postError?.code || postError?.payload?.code || '';
+  const isLocationNotConfigured = errorCode === 'BOARD_013';
+  const isLocationAccessDenied = errorCode === 'BOARD_014';
 
   if (isPostLoading) {
     return (
@@ -855,26 +1141,68 @@ const PostDetailPage = () => {
   }
 
   if (errorMessage || !post) {
+    const fallbackMessage = isLocationNotConfigured
+      ? '동네 설정이 필요해요. 위치를 설정한 뒤 다시 확인해 주세요.'
+      : isLocationAccessDenied
+        ? '접근 권한이 없어 이 글을 볼 수 없어요.'
+        : '삭제되었거나 존재하지 않는 글입니다.';
+
     return (
       <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col items-center justify-center">
-        <p className="text-stone-500 dark:text-gray-400 mb-4">삭제되었거나 존재하지 않는 글입니다.</p>
-        <button onClick={() => navigate(communityListPath)} className="bg-stone-900 text-white px-4 py-2 rounded-xl text-sm">돌아가기</button>
+        <p className="text-stone-500 dark:text-gray-400 mb-4">{fallbackMessage}</p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => navigate(communityListPath)}
+            className="bg-stone-900 text-white px-4 py-2 rounded-xl text-sm"
+          >
+            돌아가기
+          </button>
+          {isLocationAccessDenied && (
+            <button
+              type="button"
+              onClick={() => navigate('/community?locationScope=all&sort=latest', { replace: true })}
+              className="px-4 py-2 rounded-xl text-sm border border-stone-300 text-stone-700 hover:bg-stone-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+            >
+              전체 보기
+            </button>
+          )}
+        </div>
       </div>
     );
   }
 
+  const quoteSourceId = post?.quotePreview?.id || post?.quoteOfItemId || null;
+  const canOpenQuoteSource = Boolean(quoteSourceId) && !post?.quotePreview?.unavailable;
+
   return (
-    <div className="min-h-screen pb-24 md:pb-0 relative px-4 md:px-6 lg:px-8 py-6">
+    <div className="min-h-screen pb-24 md:pb-0 relative px-0 md:px-2 lg:px-4 py-4 md:py-6">
       <div className="max-w-3xl mx-auto w-full bg-white dark:bg-gray-900 rounded-3xl border border-stone-100 dark:border-gray-800 shadow-sm overflow-hidden">
         {/* 헤더 */}
         <div className="sticky top-0 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm z-20 px-4 py-4 flex items-center justify-between border-b border-stone-100 dark:border-gray-800">
-          <button onClick={() => navigate(communityListPath)} className="p-2 -ml-2 text-stone-400 hover:text-stone-800 dark:text-gray-400 dark:hover:text-gray-200">
+          <button
+            type="button"
+            aria-label="목록으로 이동"
+            onClick={() => navigate(communityListPath)}
+            className="p-2 -ml-2 text-stone-400 hover:text-stone-800 dark:text-gray-400 dark:hover:text-gray-200"
+          >
             <ArrowLeft className="w-6 h-6" />
           </button>
           <div className="flex gap-4 items-center">
-            <button className="text-stone-400 hover:text-stone-800 dark:text-gray-400 dark:hover:text-gray-200"><Share2 className="w-5 h-5" /></button>
+            <button
+              type="button"
+              aria-label="게시글 공유"
+              onClick={handleSharePost}
+              className="text-stone-400 hover:text-stone-800 dark:text-gray-400 dark:hover:text-gray-200"
+            >
+              <Share2 className="w-5 h-5" />
+            </button>
             <div className="relative">
               <button
+                type="button"
+                aria-label="게시글 더보기"
+                aria-haspopup="menu"
+                aria-expanded={showPostMenu}
                 onClick={() => setShowPostMenu(!showPostMenu)}
                 className="text-stone-400 hover:text-stone-800 dark:text-gray-400 dark:hover:text-gray-200"
               >
@@ -883,7 +1211,7 @@ const PostDetailPage = () => {
               {showPostMenu && (
                 <>
                   <div className="fixed inset-0 z-30" onClick={() => setShowPostMenu(false)} />
-                  <div className="absolute right-0 top-full mt-2 w-32 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-stone-100 dark:border-gray-700 z-40 overflow-hidden">
+                  <div className="absolute right-0 top-full mt-2 w-36 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-stone-100 dark:border-gray-700 z-40 overflow-hidden">
                     {isAuthor && (
                       <>
                         {canToggleUrgentResolved && (
@@ -923,9 +1251,17 @@ const PostDetailPage = () => {
                       </>
                     )}
                     {!isAuthor && (
-                      <div className="px-4 py-3 text-sm text-stone-400 dark:text-gray-500">
-                        신고하기
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowPostMenu(false);
+                          setShowReportModal(true);
+                        }}
+                        disabled={Boolean(post?.reported) || isReportSubmitting}
+                        className="w-full px-4 py-3 text-left text-sm text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 disabled:text-stone-400 dark:disabled:text-gray-500 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                      >
+                        {post?.reported ? '신고 완료' : '신고하기'}
+                      </button>
                     )}
                   </div>
                 </>
@@ -934,7 +1270,7 @@ const PostDetailPage = () => {
           </div>
         </div>
 
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {/* 작성자 정보 */}
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 rounded-full bg-stone-100 dark:bg-gray-800 flex items-center justify-center border border-stone-200 dark:border-gray-700">
@@ -997,7 +1333,7 @@ const PostDetailPage = () => {
                         지금 급해요
                       </span>
                     ) : (
-                      <span className="font-bold text-amber-500 dark:text-amber-400">{post.category === 'hospital' ? '🏥 병원/기관' : categoryLabels[post.category] || post.category}</span>
+                      <span className="font-bold text-amber-500 dark:text-amber-400">{categoryLabels[post.category] || post.category}</span>
                     )}
                   </>
                 )}
@@ -1008,64 +1344,152 @@ const PostDetailPage = () => {
           {/* 본문 */}
           <div className="mb-8">
             <h1 className="text-xl font-bold text-stone-900 dark:text-gray-100 mb-4">{post.title}</h1>
+            {post.quoteOfItemId && (
+              <div
+                className={`mb-4 rounded-2xl border border-stone-200 dark:border-gray-700 bg-stone-50/90 dark:bg-gray-800/70 p-3.5 ${canOpenQuoteSource ? 'cursor-pointer hover:bg-stone-100/90 dark:hover:bg-gray-800 transition-colors' : ''}`}
+                role={canOpenQuoteSource ? 'button' : undefined}
+                tabIndex={canOpenQuoteSource ? 0 : undefined}
+                aria-label={canOpenQuoteSource ? '인용 원문 상세 보기' : undefined}
+                onClick={canOpenQuoteSource ? handleOpenQuotedPost : undefined}
+                onKeyDown={canOpenQuoteSource ? (event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    handleOpenQuotedPost();
+                  }
+                } : undefined}
+              >
+                {post.quotePreview?.unavailable ? (
+                  <p className="text-sm text-stone-500 dark:text-gray-400">원문을 볼 수 없어요.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-stone-500 dark:text-gray-400">
+                      {post.quotePreview?.authorName || '원문 작성자'}
+                    </p>
+                    <p className="text-sm font-semibold text-stone-800 dark:text-gray-100">
+                      {post.quotePreview?.title || '원문'}
+                    </p>
+                    {post.quotePreview?.content && (
+                      <p className="text-xs text-stone-500 dark:text-gray-400 whitespace-pre-wrap">
+                        {post.quotePreview.content}
+                      </p>
+                    )}
+                    {post.quotePreview?.thumbnailUrl && (
+                      <div className="mt-2 rounded-xl overflow-hidden border border-stone-200/80 dark:border-gray-700/70 bg-white/80 dark:bg-gray-900/30">
+                        {(post.quotePreview?.thumbnailAvifUrl
+                          || post.quotePreview?.thumbnailWebpUrl
+                          || post.quotePreview?.thumbnailJpegUrl
+                          || post.quotePreview?.thumbnailPngUrl) ? (
+                          <picture>
+                            {post.quotePreview?.thumbnailAvifUrl && (
+                              <source type="image/avif" srcSet={post.quotePreview.thumbnailAvifUrl} />
+                            )}
+                            {post.quotePreview?.thumbnailWebpUrl && (
+                              <source type="image/webp" srcSet={post.quotePreview.thumbnailWebpUrl} />
+                            )}
+                            {post.quotePreview?.thumbnailJpegUrl && (
+                              <source type="image/jpeg" srcSet={post.quotePreview.thumbnailJpegUrl} />
+                            )}
+                            {post.quotePreview?.thumbnailPngUrl && (
+                              <source type="image/png" srcSet={post.quotePreview.thumbnailPngUrl} />
+                            )}
+                            <img
+                              src={post.quotePreview.thumbnailUrl}
+                              alt={`${post.quotePreview?.title || '원문'} 이미지`}
+                              width={post.quotePreview?.thumbnailWidth || undefined}
+                              height={post.quotePreview?.thumbnailHeight || undefined}
+                              className="w-full max-h-72 object-cover"
+                              loading="lazy"
+                              decoding="async"
+                              fetchPriority="low"
+                              sizes="(max-width: 768px) 92vw, 760px"
+                            />
+                          </picture>
+                        ) : (
+                          <img
+                            src={post.quotePreview.thumbnailUrl}
+                            alt={`${post.quotePreview?.title || '원문'} 이미지`}
+                            className="w-full max-h-72 object-cover"
+                            loading="lazy"
+                            decoding="async"
+                            fetchPriority="low"
+                          />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             <p className="text-stone-600 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">{post.content}</p>
             {postImages.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
-                {postImages.map((file) => (
+              <div className={`grid gap-3 mt-4 ${postImages.length === 1 ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2'}`}>
+                {postImages.map((file, index) => (
                   <div
                     key={file.id || file.url}
-                    className="rounded-2xl overflow-hidden border border-stone-100 dark:border-gray-700 bg-stone-50 dark:bg-gray-800/40"
-                    style={file.width && file.height ? { aspectRatio: `${file.width} / ${file.height}` } : undefined}
+                    className="max-h-[340px] rounded-2xl overflow-hidden border border-stone-100 dark:border-gray-700 bg-stone-50 dark:bg-gray-800/40"
                   >
-                    {file.detailVariant || file.posterVariant ? (
-                      <picture>
-                        {file.detailVariant?.avifUrl && <source type="image/avif" srcSet={file.detailVariant.avifUrl} />}
-                        {file.detailVariant?.webpUrl && <source type="image/webp" srcSet={file.detailVariant.webpUrl} />}
-                        {file.detailVariant?.jpegUrl && <source type="image/jpeg" srcSet={file.detailVariant.jpegUrl} />}
-                        {file.detailVariant?.pngUrl && <source type="image/png" srcSet={file.detailVariant.pngUrl} />}
-                        {file.posterVariant?.webpUrl && <source type="image/webp" srcSet={file.posterVariant.webpUrl} />}
-                        {file.posterVariant?.jpegUrl && <source type="image/jpeg" srcSet={file.posterVariant.jpegUrl} />}
-                        {file.posterVariant?.pngUrl && <source type="image/png" srcSet={file.posterVariant.pngUrl} />}
+                    <div
+                      className="w-full"
+                      style={file.width && file.height ? { aspectRatio: `${file.width} / ${file.height}` } : undefined}
+                    >
+                      {file.detailVariant || file.posterVariant ? (
+                        <picture className="block w-full">
+                          {file.detailVariant?.avifUrl && <source type="image/avif" srcSet={file.detailVariant.avifUrl} />}
+                          {file.detailVariant?.webpUrl && <source type="image/webp" srcSet={file.detailVariant.webpUrl} />}
+                          {file.detailVariant?.jpegUrl && <source type="image/jpeg" srcSet={file.detailVariant.jpegUrl} />}
+                          {file.detailVariant?.pngUrl && <source type="image/png" srcSet={file.detailVariant.pngUrl} />}
+                          {file.posterVariant?.webpUrl && <source type="image/webp" srcSet={file.posterVariant.webpUrl} />}
+                          {file.posterVariant?.jpegUrl && <source type="image/jpeg" srcSet={file.posterVariant.jpegUrl} />}
+                          {file.posterVariant?.pngUrl && <source type="image/png" srcSet={file.posterVariant.pngUrl} />}
+                          <img
+                            src={file.url}
+                            alt={file.name}
+                            width={file.width || undefined}
+                            height={file.height || undefined}
+                            className="block w-full object-cover"
+                            loading="lazy"
+                            decoding="async"
+                            fetchPriority={index === 0 ? 'high' : 'low'}
+                            sizes="(max-width: 768px) 92vw, 760px"
+                          />
+                        </picture>
+                      ) : (
                         <img
                           src={file.url}
                           alt={file.name}
                           width={file.width || undefined}
                           height={file.height || undefined}
-                          className="w-full h-full max-h-[340px] object-cover"
+                          className="block w-full object-cover"
                           loading="lazy"
+                          decoding="async"
+                          fetchPriority={index === 0 ? 'high' : 'low'}
+                          sizes="(max-width: 768px) 92vw, 760px"
                         />
-                      </picture>
-                    ) : (
-                      <img
-                        src={file.url}
-                        alt={file.name}
-                        width={file.width || undefined}
-                        height={file.height || undefined}
-                        className="w-full h-full max-h-[340px] object-cover"
-                        loading="lazy"
-                      />
-                    )}
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
             )}
 
-            {post.category === 'hospital' && post.placeName && (
+            {hasPlaceInfo && (
               <div className="mt-8 p-4 rounded-2xl bg-teal-50 dark:bg-teal-900/10 border border-teal-100 dark:border-teal-900/30">
                 <div className="flex items-start gap-4">
                   <div className="w-10 h-10 rounded-full bg-teal-100 dark:bg-teal-800/50 flex items-center justify-center shrink-0">
                     <MapPin className="w-5 h-5 text-teal-600 dark:text-teal-400" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-bold text-stone-900 dark:text-gray-100 text-base md:text-lg mb-0.5 truncate">{post.placeName}</p>
-                    <p className="text-sm text-stone-600 dark:text-gray-400 truncate">{post.placeAddress}</p>
+                    <p className="font-bold text-stone-900 dark:text-gray-100 text-base md:text-lg mb-0.5 truncate">{placeName}</p>
+                    {placeAddress && (
+                      <p className="text-sm text-stone-600 dark:text-gray-400 truncate">{placeAddress}</p>
+                    )}
                     <a
-                      href={`https://map.kakao.com/link/map/${encodeURIComponent(post.placeName)},${post.placeLat},${post.placeLng}`}
+                      href={placeMapHref}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-block mt-2 text-xs font-bold text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300 transition-colors"
                     >
-                      카카오맵에서 보기 〉
+                      카카오맵에서 위치 보기 〉
                     </a>
                   </div>
                 </div>
@@ -1074,11 +1498,15 @@ const PostDetailPage = () => {
           </div>
 
           {/* 액션 버튼 */}
-          <div className="flex gap-4 border-b border-stone-100 dark:border-gray-800 pb-6 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 md:gap-3 border-b border-stone-100 dark:border-gray-800 pb-6 mb-6">
             <button
               type="button"
               onClick={async () => {
                 if (isLikeLoading) return;
+                if (!isAuthenticated) {
+                  alert('로그인 후 공감할 수 있어요.');
+                  return;
+                }
                 const wasLiked = !!post.liked;
                 const previousCount = post.likeCount ?? 0;
                 const nextCount = Math.max(0, previousCount + (wasLiked ? -1 : 1));
@@ -1102,24 +1530,67 @@ const PostDetailPage = () => {
                   setIsLikeLoading(false);
                 }
               }}
-              className={`flex items-center gap-1.5 font-bold px-4 py-2 rounded-xl text-sm transition-colors ${post.liked ? 'text-rose-500 bg-rose-50 dark:bg-rose-500/10' : 'text-stone-500 bg-stone-50 dark:text-gray-300 dark:bg-gray-800'
+              disabled={isLikeLoading}
+              aria-busy={isLikeLoading}
+              aria-label={`공감 ${post.likeCount ?? 0}개`}
+              className={`w-full min-h-11 justify-center inline-flex items-center gap-1.5 font-bold px-3 py-2 rounded-xl text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${post.liked ? 'text-rose-500 bg-rose-50 dark:bg-rose-500/10' : 'text-stone-500 bg-stone-50 dark:text-gray-300 dark:bg-gray-800'
                 }`}
             >
               <Heart className={`w-4 h-4 ${post.liked ? 'fill-rose-500' : ''}`} /> {post.likeCount ?? 0}
             </button>
-            <button className="flex items-center gap-1.5 text-stone-500 dark:text-gray-300 font-bold bg-stone-50 dark:bg-gray-800 px-4 py-2 rounded-xl text-sm">
+            <div className="relative" data-detail-repost-menu>
+              <button
+                type="button"
+                data-detail-repost-trigger
+                onClick={() => setShowRepostMenu((prev) => !prev)}
+                disabled={isRepostLoading}
+                aria-busy={isRepostLoading}
+                aria-label={`재게시 ${post.repostCount ?? 0}개`}
+                className={`w-full min-h-11 justify-center inline-flex items-center gap-1.5 font-bold px-3 py-2 rounded-xl text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                  post.reposted ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-300' : 'text-stone-500 bg-stone-50 dark:text-gray-300 dark:bg-gray-800'
+                }`}
+              >
+                <Repeat2 className="w-4 h-4" /> {post.repostCount ?? 0}
+              </button>
+              {showRepostMenu && (
+                <div className="absolute left-0 top-full mt-2 z-30 w-40 overflow-hidden rounded-xl border border-stone-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setShowRepostMenu(false);
+                      await handleToggleRepost();
+                    }}
+                    className="w-full px-3 py-2.5 text-left text-xs font-semibold text-stone-700 dark:text-gray-100 hover:bg-stone-50 dark:hover:bg-gray-700 flex items-center gap-2"
+                  >
+                    <Repeat2 className="w-3.5 h-3.5" />
+                    {post.reposted ? '재게시 취소' : '재게시'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowRepostMenu(false);
+                      navigate(`/community/write?quoteOf=${post.id}&locationScope=${post.postScope || 'all'}`);
+                    }}
+                    className="w-full px-3 py-2.5 text-left text-xs font-semibold text-stone-700 dark:text-gray-100 hover:bg-stone-50 dark:hover:bg-gray-700 flex items-center gap-2 border-t border-stone-100 dark:border-gray-700"
+                  >
+                    <PenLine className="w-3.5 h-3.5" />
+                    인용하기
+                  </button>
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleScrollToComments}
+              aria-label="댓글로 이동"
+              className="w-full min-h-11 justify-center inline-flex items-center gap-1.5 text-stone-500 dark:text-gray-300 font-bold bg-stone-50 dark:bg-gray-800 px-3 py-2 rounded-xl text-sm"
+            >
               <MessageSquare className="w-4 h-4" /> {post.commentCount ?? 0}
             </button>
           </div>
 
-
-
-
-
-
-
           {/* 댓글 영역 */}
-          <div className="space-y-6 pb-24">
+          <div ref={commentSectionRef} className="space-y-6 pb-24">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-stone-800 dark:text-gray-100">댓글</h3>
               {!isAuthenticated && (
@@ -1144,6 +1615,7 @@ const PostDetailPage = () => {
                 />
                 <button
                   type="button"
+                  aria-label="댓글 전송"
                   onClick={handleSubmitComment}
                   disabled={commentMutation.isPending || !isAuthenticated}
                   className="h-10 w-10 shrink-0 inline-flex items-center justify-center rounded-full bg-amber-400 text-stone-900 hover:bg-amber-300 active:scale-95 transition disabled:opacity-45 disabled:cursor-not-allowed"
@@ -1279,11 +1751,15 @@ const PostDetailPage = () => {
                     <div className="pl-10 pr-4 mt-2 text-sm text-stone-600 dark:text-gray-300 leading-relaxed">
                       {editingCommentId === comment.id ? (
                         <div className="space-y-2">
-                          <input
-                            type="text"
+                          <textarea
+                            ref={editTextareaRef}
+                            rows={1}
                             value={editingContent}
-                            onChange={(event) => setEditingContent(event.target.value)}
-                            className="w-full rounded-lg bg-white/70 dark:bg-gray-900/60 border border-stone-200 dark:border-gray-700 px-3 py-2 text-sm focus:outline-none"
+                            onChange={(event) => {
+                              setEditingContent(event.target.value);
+                              autoResize(event.target, 4);
+                            }}
+                            className="w-full rounded-lg bg-white/70 dark:bg-gray-900/60 border border-stone-200 dark:border-gray-700 px-3 py-2 text-sm leading-6 focus:outline-none resize-none overflow-y-auto"
                           />
                           <div className="flex gap-2 text-[11px] text-stone-400">
                             <button type="button" onClick={submitEditComment} className="text-amber-500">저장</button>
@@ -1439,11 +1915,15 @@ const PostDetailPage = () => {
                               <div className="pl-9 pr-4 mt-2 text-sm text-stone-600 dark:text-gray-300 leading-relaxed">
                                 {editingCommentId === reply.id ? (
                                   <div className="space-y-2">
-                                    <input
-                                      type="text"
+                                    <textarea
+                                      ref={editTextareaRef}
+                                      rows={1}
                                       value={editingContent}
-                                      onChange={(event) => setEditingContent(event.target.value)}
-                                      className="w-full rounded-lg bg-white/70 dark:bg-gray-900/60 border border-stone-200 dark:border-gray-700 px-3 py-2 text-sm focus:outline-none"
+                                      onChange={(event) => {
+                                        setEditingContent(event.target.value);
+                                        autoResize(event.target, 4);
+                                      }}
+                                      className="w-full rounded-lg bg-white/70 dark:bg-gray-900/60 border border-stone-200 dark:border-gray-700 px-3 py-2 text-sm leading-6 focus:outline-none resize-none overflow-y-auto"
                                     />
                                     <div className="flex gap-2 text-[11px] text-stone-400">
                                       <button type="button" onClick={submitEditComment} className="text-amber-500">저장</button>
@@ -1508,6 +1988,7 @@ const PostDetailPage = () => {
                               />
                               <button
                                 type="button"
+                                aria-label="답글 전송"
                                 onClick={() => handleSubmitReply(comment)}
                                 disabled={commentMutation.isPending || !isAuthenticated}
                                 className="h-10 w-10 shrink-0 inline-flex items-center justify-center rounded-full bg-amber-400 text-stone-900 hover:bg-amber-300 active:scale-95 transition disabled:opacity-45 disabled:cursor-not-allowed"
@@ -1538,6 +2019,70 @@ const PostDetailPage = () => {
         </div>
       </div>
 
+      {/* 신고 모달 */}
+      {showReportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-[360px] max-w-[92vw] shadow-xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-stone-800 dark:text-gray-100">게시글 신고</h3>
+              <button
+                type="button"
+                aria-label="신고 모달 닫기"
+                onClick={() => setShowReportModal(false)}
+                className="text-stone-400 hover:text-stone-600 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <label className="block text-xs font-semibold text-stone-600 dark:text-gray-300">신고 사유</label>
+              <select
+                value={reportReason}
+                onChange={(event) => setReportReason(event.target.value)}
+                disabled={isReportSubmitting}
+                className="w-full rounded-xl border border-stone-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2.5 text-sm text-stone-700 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-300/70 dark:focus:ring-amber-400/50"
+              >
+                {REPORT_REASON_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+
+              <label className="block text-xs font-semibold text-stone-600 dark:text-gray-300">상세 설명 (선택)</label>
+              <textarea
+                rows={4}
+                maxLength={500}
+                value={reportDetail}
+                onChange={(event) => setReportDetail(event.target.value)}
+                disabled={isReportSubmitting}
+                placeholder="신고 사유를 구체적으로 입력해주세요."
+                className="w-full rounded-xl border border-stone-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2.5 text-sm text-stone-700 dark:text-gray-100 placeholder:text-stone-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-300/70 dark:focus:ring-amber-400/50 resize-none"
+              />
+              <p className="text-[11px] text-stone-400 dark:text-gray-500 text-right">{reportDetail.length}/500</p>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button
+                type="button"
+                onClick={() => setShowReportModal(false)}
+                disabled={isReportSubmitting}
+                className="flex-1 py-2.5 rounded-xl bg-stone-100 dark:bg-gray-700 text-stone-700 dark:text-gray-200 font-bold text-sm hover:bg-stone-200 dark:hover:bg-gray-600 disabled:opacity-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitReport}
+                disabled={isReportSubmitting}
+                className="flex-1 py-2.5 rounded-xl bg-rose-500 text-white font-bold text-sm hover:bg-rose-600 disabled:opacity-50"
+              >
+                {isReportSubmitting ? '신고 중...' : '신고하기'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 삭제 확인 모달 */}
       {showDeleteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -1545,6 +2090,8 @@ const PostDetailPage = () => {
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold text-stone-800 dark:text-gray-100">게시글 삭제</h3>
               <button
+                type="button"
+                aria-label="삭제 모달 닫기"
                 onClick={() => setShowDeleteModal(false)}
                 className="text-stone-400 hover:text-stone-600 dark:text-gray-400 dark:hover:text-gray-200"
               >

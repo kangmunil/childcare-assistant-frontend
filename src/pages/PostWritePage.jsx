@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Image as ImageIcon, X, MapPin, AlertCircle, HelpCircle, Coffee, Sparkles, Building2, Globe, ShoppingBag, BookOpen, Map, Zap, Gift } from 'lucide-react';
 import api from '../lib/api';
 import useStore from '../store/useStore';
@@ -42,6 +42,16 @@ const CATEGORY_REQUIRED_MESSAGE = '카테고리를 선택해주세요.';
 const TITLE_CONTENT_REQUIRED_MESSAGE = '제목과 내용을 입력해주세요.';
 const LOCAL_REVIEW_PLACE_REQUIRED_MESSAGE = '동네후기 글에는 장소를 선택해주세요.';
 const SCOPE_CATEGORY_INVALID_MESSAGE = '선택한 게시 대상과 카테고리가 맞지 않아요. 카테고리를 다시 선택해주세요.';
+const QUOTE_SOURCE_UNAVAILABLE_MESSAGE = '인용할 원문을 찾을 수 없어 작성할 수 없어요.';
+const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg']);
+
+const pickPreferredVariantUrl = (variantSet) => (
+  variantSet?.webpUrl
+  || variantSet?.jpegUrl
+  || variantSet?.pngUrl
+  || variantSet?.avifUrl
+  || null
+);
 
 const isValidPlaceSelection = (place) => {
   const lat = place?.placeLat;
@@ -65,6 +75,10 @@ const PostWritePage = () => {
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { user, updateUserInfo } = useStore();
+  const quoteOfParam = searchParams.get('quoteOf');
+  const parsedQuoteOfId = Number(quoteOfParam);
+  const quoteOfItemId = Number.isInteger(parsedQuoteOfId) && parsedQuoteOfId > 0 ? parsedQuoteOfId : null;
+  const isQuoteMode = quoteOfItemId !== null;
   const viewLocationScope = searchParams.get('locationScope') === 'neighbor' ? 'neighbor' : 'all';
   const legacyBoardParam = searchParams.get('board') || '';
   const hasUserLocation = Boolean(
@@ -92,6 +106,64 @@ const PostWritePage = () => {
   const [placeSubmitError, setPlaceSubmitError] = useState(false);
   const [pendingNeighborPostScope, setPendingNeighborPostScope] = useState(false);
   const [isImageProcessing, setIsImageProcessing] = useState(false);
+
+  const {
+    data: quoteSource,
+    isLoading: isQuoteSourceLoading,
+    error: quoteSourceError,
+  } = useQuery({
+    queryKey: ['community', 'detail', String(quoteOfItemId)],
+    queryFn: async ({ signal }) => {
+      const response = await api.get(`/boards/community/items/${quoteOfItemId}`, { signal });
+      return response?.data || response || null;
+    },
+    enabled: isQuoteMode,
+    staleTime: 1000 * 60,
+  });
+
+  const effectivePostScope = isQuoteMode
+    ? (quoteSource?.postScope === 'neighbor' ? 'neighbor' : 'all')
+    : postScope;
+  const effectiveCategory = isQuoteMode ? quoteSource?.category : category;
+  const quoteSourcePreviewImage = useMemo(() => {
+    if (!isQuoteMode || !quoteSource || !Array.isArray(quoteSource.files)) {
+      return null;
+    }
+
+    const firstImageFile = quoteSource.files.find((file) => {
+      if (!file) return false;
+      const extension = String(file.extension || '').toLowerCase();
+      if (!IMAGE_EXTENSIONS.has(extension)) return false;
+      return typeof file.downloadUrl === 'string' && file.downloadUrl.trim();
+    });
+
+    if (!firstImageFile) {
+      return null;
+    }
+
+    const variantSet = firstImageFile.imageVariants?.thumb || firstImageFile.imageVariants?.poster || null;
+    const preferredUrl = pickPreferredVariantUrl(variantSet)
+      || (typeof firstImageFile.downloadUrl === 'string' ? firstImageFile.downloadUrl : null);
+
+    if (!preferredUrl) {
+      return null;
+    }
+
+    return {
+      url: preferredUrl,
+      variantSet,
+      alt: firstImageFile.orgFilename || quoteSource.title || '원문 이미지',
+    };
+  }, [isQuoteMode, quoteSource]);
+  const quoteSourcePlace = isQuoteMode ? {
+    placeName: quoteSource?.placeName ?? null,
+    placeAddress: quoteSource?.placeAddress ?? null,
+    placeLat: quoteSource?.placeLat ?? null,
+    placeLng: quoteSource?.placeLng ?? null,
+  } : null;
+  const effectivePlace = isQuoteMode ? quoteSourcePlace : selectedPlace;
+  const isQuoteUnavailable = isQuoteMode && !isQuoteSourceLoading && (!quoteSource || Boolean(quoteSourceError));
+  const canOpenQuoteSource = Boolean(quoteOfItemId) && !isQuoteSourceLoading && !isQuoteUnavailable;
 
   const handleImageUpload = async (e) => {
     const selectedFiles = Array.from(e.target.files || []);
@@ -153,7 +225,14 @@ const PostWritePage = () => {
 
   const handleSubmit = async () => {
     if (isSubmitting || isImageProcessing) return;
-    if (postScope === 'neighbor' && !hasUserLocation) {
+    if (isQuoteMode && isQuoteSourceLoading) {
+      return;
+    }
+    if (isQuoteUnavailable) {
+      setErrorMessage(QUOTE_SOURCE_UNAVAILABLE_MESSAGE);
+      return;
+    }
+    if (effectivePostScope === 'neighbor' && !hasUserLocation) {
       setLocationSubmitError(true);
       setCategorySubmitError(false);
       setPlaceSubmitError(false);
@@ -161,14 +240,14 @@ const PostWritePage = () => {
       setLocationModalOpen(true);
       return;
     }
-    if (!category) {
+    if (!effectiveCategory) {
       setLocationSubmitError(false);
       setCategorySubmitError(true);
       setPlaceSubmitError(false);
       setErrorMessage(CATEGORY_REQUIRED_MESSAGE);
       return;
     }
-    if (category === 'local_review' && !isValidPlaceSelection(selectedPlace)) {
+    if (effectiveCategory === 'local_review' && !isValidPlaceSelection(effectivePlace)) {
       setLocationSubmitError(false);
       setCategorySubmitError(false);
       setPlaceSubmitError(true);
@@ -193,12 +272,13 @@ const PostWritePage = () => {
       const createResponse = await api.post('/boards/community/items', {
         title: title.trim(),
         content: content.trim(),
-        category,
-        postScope,
-        placeName: selectedPlace?.placeName || null,
-        placeAddress: selectedPlace?.placeAddress || null,
-        placeLat: selectedPlace?.placeLat || null,
-        placeLng: selectedPlace?.placeLng || null
+        category: effectiveCategory,
+        postScope: effectivePostScope,
+        quoteOfItemId: isQuoteMode ? quoteOfItemId : null,
+        placeName: effectivePlace?.placeName || null,
+        placeAddress: effectivePlace?.placeAddress || null,
+        placeLat: effectivePlace?.placeLat || null,
+        placeLng: effectivePlace?.placeLng || null
       });
 
       const createdItem = createResponse?.data || createResponse || null;
@@ -221,7 +301,7 @@ const PostWritePage = () => {
 
       await queryClient.invalidateQueries({ queryKey: ['community'] });
       await queryClient.invalidateQueries({ queryKey: ['community', 'highlights'] });
-      navigate(`/community?locationScope=${postScope}`);
+      navigate(`/community?locationScope=${effectivePostScope}`);
     } catch (error) {
       if (error?.code === 'BOARD_013') {
         setLocationSubmitError(true);
@@ -259,22 +339,93 @@ const PostWritePage = () => {
             <ArrowLeft className="w-6 h-6" />
           </button>
           <h1 className="text-lg font-bold text-stone-800 dark:text-gray-100">
-            커뮤니티 글쓰기
+            {isQuoteMode ? '인용 작성' : '커뮤니티 글쓰기'}
           </h1>
           <button
             onClick={handleSubmit}
-            disabled={isSubmitting || isImageProcessing}
-            className={`text-sm font-bold ${(isSubmitting || isImageProcessing)
+            disabled={isSubmitting || isImageProcessing || isQuoteSourceLoading || isQuoteUnavailable}
+            className={`text-sm font-bold ${(isSubmitting || isImageProcessing || isQuoteSourceLoading || isQuoteUnavailable)
               ? 'text-stone-300 dark:text-gray-600'
               : 'text-amber-500 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300'
               }`}
           >
-            {isImageProcessing ? '이미지 준비 중...' : isSubmitting ? '등록 중...' : '완료'}
+            {isQuoteSourceLoading ? '원문 확인 중...' : isImageProcessing ? '이미지 준비 중...' : isSubmitting ? '등록 중...' : '완료'}
           </button>
         </div>
 
         <div className="p-6 space-y-6 md:space-y-8">
-          <div className="flex flex-col gap-4">
+          {isQuoteMode && (
+            <div
+              className={`rounded-2xl border border-stone-200 dark:border-gray-700 bg-stone-50 dark:bg-gray-800/70 p-4 ${canOpenQuoteSource ? 'cursor-pointer hover:bg-stone-100/90 dark:hover:bg-gray-800 transition-colors' : ''}`}
+              role={canOpenQuoteSource ? 'button' : undefined}
+              tabIndex={canOpenQuoteSource ? 0 : undefined}
+              aria-label={canOpenQuoteSource ? '인용 원문 상세 보기' : undefined}
+              onClick={canOpenQuoteSource ? () => navigate(`/community/${quoteOfItemId}`) : undefined}
+              onKeyDown={canOpenQuoteSource ? (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  navigate(`/community/${quoteOfItemId}`);
+                }
+              } : undefined}
+            >
+              <p className="text-xs font-semibold text-stone-500 dark:text-gray-400 mb-1.5">인용 원문</p>
+              {isQuoteSourceLoading ? (
+                <p className="text-sm text-stone-500 dark:text-gray-400">원문을 불러오는 중이에요...</p>
+              ) : isQuoteUnavailable ? (
+                <p className="text-sm text-rose-500">{QUOTE_SOURCE_UNAVAILABLE_MESSAGE}</p>
+              ) : (
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-stone-800 dark:text-gray-100">{quoteSource?.title || '원문'}</p>
+                  {quoteSource?.content && (
+                    <p className="text-xs text-stone-500 dark:text-gray-400 line-clamp-3">{quoteSource.content}</p>
+                  )}
+                  {quoteSourcePreviewImage && (
+                    <div className="mt-2 rounded-xl overflow-hidden border border-stone-200/80 dark:border-gray-700/70 bg-white/80 dark:bg-gray-900/30">
+                      {quoteSourcePreviewImage.variantSet ? (
+                        <picture>
+                          {quoteSourcePreviewImage.variantSet?.avifUrl && (
+                            <source type="image/avif" srcSet={quoteSourcePreviewImage.variantSet.avifUrl} />
+                          )}
+                          {quoteSourcePreviewImage.variantSet?.webpUrl && (
+                            <source type="image/webp" srcSet={quoteSourcePreviewImage.variantSet.webpUrl} />
+                          )}
+                          {quoteSourcePreviewImage.variantSet?.jpegUrl && (
+                            <source type="image/jpeg" srcSet={quoteSourcePreviewImage.variantSet.jpegUrl} />
+                          )}
+                          {quoteSourcePreviewImage.variantSet?.pngUrl && (
+                            <source type="image/png" srcSet={quoteSourcePreviewImage.variantSet.pngUrl} />
+                          )}
+                          <img
+                            src={quoteSourcePreviewImage.url}
+                            alt={quoteSourcePreviewImage.alt}
+                            width={quoteSourcePreviewImage.variantSet?.width || undefined}
+                            height={quoteSourcePreviewImage.variantSet?.height || undefined}
+                            className="w-full max-h-64 object-cover"
+                            loading="lazy"
+                            decoding="async"
+                            fetchPriority="low"
+                            sizes="(max-width: 768px) 92vw, 640px"
+                          />
+                        </picture>
+                      ) : (
+                        <img
+                          src={quoteSourcePreviewImage.url}
+                          alt={quoteSourcePreviewImage.alt}
+                          className="w-full max-h-64 object-cover"
+                          loading="lazy"
+                          decoding="async"
+                          fetchPriority="low"
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {!isQuoteMode && (
+            <div className="flex flex-col gap-4">
             <div className={`flex flex-col gap-3 rounded-2xl p-4 border ${hasUserLocation
               ? 'bg-stone-50 border-stone-200 dark:bg-gray-800/50 dark:border-gray-700'
               : 'bg-rose-50 border-rose-200 dark:bg-rose-900/20 dark:border-rose-800'
@@ -340,9 +491,11 @@ const PostWritePage = () => {
                   : '전국의 모든 BebeHelper 부모님들과 지식과 고민을 나눕니다.'}
               </p>
             </div>
-          </div>
+            </div>
+          )}
 
           {/* 2. 카테고리 선택 */}
+          {!isQuoteMode && (
           <div className="flex flex-col gap-2">
             <label className="text-[13px] font-bold text-stone-800 dark:text-gray-200 ml-1">어떤 이야기를 나누고 싶으신가요?</label>
             <div className={`flex gap-2 flex-wrap rounded-2xl p-2 -m-2 transition-colors border ${categorySubmitError
@@ -415,47 +568,54 @@ const PostWritePage = () => {
               <p className="text-[13px] text-rose-500 ml-1 animate-pulse font-medium">{errorMessage}</p>
             )}
           </div>
+          )}
 
-          {/* 3. 장소 검색 (병원/기관 카테고리 선택 시) */}
-          {category === 'local_review' && (
+          {/* 3. 장소 검색 (동네후기 카테고리 선택 시) */}
+          {effectiveCategory === 'local_review' && (
             <div className="bg-teal-50 dark:bg-teal-900/10 border border-teal-100 dark:border-teal-900/30 rounded-2xl p-4 flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-bold text-teal-800 dark:text-teal-300">
                   어느 곳에 대한 후기인가요?
                 </p>
-                <button
-                  onClick={() => setPlaceSearchModalOpen(true)}
-                  className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-full transition-colors"
-                >
-                  장소 찾기
-                </button>
+                {!isQuoteMode && (
+                  <button
+                    onClick={() => setPlaceSearchModalOpen(true)}
+                    className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-full transition-colors"
+                  >
+                    장소 찾기
+                  </button>
+                )}
               </div>
 
-              {selectedPlace && (
+              {effectivePlace && (
                 <div className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-teal-200 dark:border-teal-800 flex items-start gap-3 relative">
                   <MapPin className="w-5 h-5 text-teal-500 mt-0.5 shrink-0" />
                   <div className="min-w-0 pr-8">
-                    <p className="font-bold text-stone-800 dark:text-gray-100 truncate">{selectedPlace.placeName}</p>
-                    <p className="text-xs text-stone-500 dark:text-gray-400 truncate mt-0.5">{selectedPlace.placeAddress}</p>
+                    <p className="font-bold text-stone-800 dark:text-gray-100 truncate">{effectivePlace.placeName}</p>
+                    <p className="text-xs text-stone-500 dark:text-gray-400 truncate mt-0.5">{effectivePlace.placeAddress}</p>
                   </div>
-                  <button
-                    onClick={() => setSelectedPlace(null)}
-                    className="absolute top-2 right-2 p-1.5 text-stone-400 hover:text-stone-600 dark:hover:text-gray-300"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
+                  {!isQuoteMode && (
+                    <button
+                      onClick={() => setSelectedPlace(null)}
+                      className="absolute top-2 right-2 p-1.5 text-stone-400 hover:text-stone-600 dark:hover:text-gray-300"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               )}
               {placeSubmitError && (
                 <div className="flex flex-wrap items-center gap-2 ml-1">
                   <p className="text-[13px] font-bold text-rose-500">{LOCAL_REVIEW_PLACE_REQUIRED_MESSAGE}</p>
-                  <button
-                    type="button"
-                    onClick={() => setPlaceSearchModalOpen(true)}
-                    className="text-xs font-bold text-teal-700 hover:text-teal-800 dark:text-teal-300 dark:hover:text-teal-200 underline underline-offset-4"
-                  >
-                    장소 찾기
-                  </button>
+                  {!isQuoteMode && (
+                    <button
+                      type="button"
+                      onClick={() => setPlaceSearchModalOpen(true)}
+                      className="text-xs font-bold text-teal-700 hover:text-teal-800 dark:text-teal-300 dark:hover:text-teal-200 underline underline-offset-4"
+                    >
+                      장소 찾기
+                    </button>
+                  )}
                 </div>
               )}
             </div>

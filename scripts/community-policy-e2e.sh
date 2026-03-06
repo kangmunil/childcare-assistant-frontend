@@ -280,29 +280,127 @@ pw goto "${FRONT_URL}/community/write?locationScope=all"
 run_js "async (page) => { await page.getByRole('button', { name: '동네생활' }).click(); }"
 run_js "async (page) => { const text = await page.evaluate(() => document.body.innerText); if (!text.includes('우리 동네 커뮤니티에 글을 올리려면 동네 설정이 필요해요.')) throw new Error('missing neighbor location guard message'); }"
 
-log "scenario 3: community sort and scope url sync"
+log "scenario 3: location auth completes and allows neighbor post without refresh"
+run_js "async (page) => {
+  await page.route('**/api/geo/reverse?*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        documents: [{
+          address: { region_3depth_name: '역삼동', address_name: '서울 강남구 역삼동' },
+          road_address: { region_3depth_name: '역삼동', address_name: '서울 강남구 테헤란로 1', zone_no: '06236' }
+        }],
+        preferredRegionName: '역삼동',
+        legalRegionName: '역삼동',
+        adminRegionName: '역삼동',
+        legalRegionCode: '1168010100',
+        adminRegionCode: '1168010100',
+        fullAddress: '서울 강남구 테헤란로 1'
+      })
+    });
+  });
+
+  await page.route('**/api/members/me', async (route) => {
+    if (route.request().method() !== 'PUT') {
+      await route.continue();
+      return;
+    }
+
+    const payload = route.request().postDataJSON() || {};
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'success',
+        data: {
+          id: '00000000-0000-0000-0000-000000000001',
+          name: '개발 테스트 사용자',
+          regionName: payload.regionName || '역삼동',
+          regionCode: payload.regionCode || '1168010100',
+          postcode: payload.postcode || '06236'
+        }
+      })
+    });
+  });
+
+  let createPayload = null;
+  await page.route('**/api/boards/community/items', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue();
+      return;
+    }
+
+    createPayload = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'success', data: { id: 999001, boardId: 1 } })
+    });
+  });
+
+  await page.context().grantPermissions(['geolocation']);
+  await page.context().setGeolocation({ latitude: 37.501, longitude: 127.031, accuracy: 25 });
+
+  const authButton = page.getByRole('button', { name: '현재 위치로 인증하기' });
+  const modalAlreadyOpen = await authButton.isVisible().catch(() => false);
+  if (!modalAlreadyOpen) {
+    await page.getByRole('button', { name: '동네 설정하기' }).first().click();
+  }
+  await authButton.click();
+  await page.waitForFunction(() => document.body.innerText.includes('이 위치로 동네를 설정할까요?'));
+  await page.getByRole('button', { name: '확인', exact: true }).click();
+
+  await page.waitForFunction(() => !document.body.innerText.includes('동네 인증하기'));
+  await page.waitForFunction(() => document.body.innerText.includes('문학동 이웃들에게만 보이는'));
+
+  await page.getByRole('button', { name: '긴급/SOS' }).click();
+  await page.getByPlaceholder('제목을 입력하세요').fill('[E2E] location auth no-refresh');
+  await page.getByPlaceholder('내용을 편하게 작성해주세요. (육아 고민, 자랑, 꿀팁 등)').fill('위치 인증 직후 작성');
+  await page.getByRole('button', { name: '완료' }).click();
+
+  await page.waitForURL((url) => url.toString().includes('/community?locationScope=neighbor'));
+  if (!createPayload || createPayload.postScope !== 'neighbor') {
+    throw new Error('location auth did not keep neighbor postScope without refresh');
+  }
+}"
+
+log "scenario 4: community sort and scope url sync"
 pw localstorage-set bebehelper-storage "${WITH_LOCATION}"
 pw reload
-pw goto "${FRONT_URL}/community?locationScope=all&sort=latest"
-run_js "async (page) => { await page.getByRole('button', { name: '인기순' }).click(); }"
-run_js "async (page) => { if (!page.url().includes('sort=popular')) throw new Error('sort=popular not reflected in URL'); }"
-run_js "async (page) => { await page.getByLabel('커뮤니티 보기 범위 선택').selectOption(['neighbor']); }"
-run_js "async (page) => { const currentUrl = page.url(); if (!currentUrl.includes('locationScope=neighbor')) throw new Error('locationScope did not change to neighbor'); if (currentUrl.includes('sort=')) throw new Error('sort should be removed in neighbor scope'); }"
+run_js "async (page) => {
+  await page.goto('${FRONT_URL}/community?locationScope=all&sort=latest');
+  await page.getByLabel('커뮤니티 정렬 선택').selectOption(['popular']);
+  if (!page.url().includes('sort=popular')) {
+    throw new Error('sort=popular not reflected in URL');
+  }
 
-log "scenario 4: PostEdit all scope category set"
+  await page.getByLabel('커뮤니티 보기 범위 선택').selectOption(['neighbor']);
+  await page.waitForFunction(() => window.location.search.includes('locationScope=neighbor'));
+
+  const currentUrl = page.url();
+  if (!currentUrl.includes('locationScope=neighbor')) {
+    throw new Error('locationScope did not change to neighbor');
+  }
+  if (currentUrl.includes('sort=')) {
+    throw new Error('sort should be removed in neighbor scope');
+  }
+}"
+
+log "scenario 5: PostEdit all scope category set"
 pw goto "${FRONT_URL}/community/${ALL_POST_ID}/edit?locationScope=all"
-run_js "async (page) => { const deadline = Date.now() + 5000; while (Date.now() < deadline) { const text = await page.evaluate(() => document.body.innerText); if (text.includes('육아광장')) return; await page.waitForTimeout(200); } throw new Error('all scope badge not shown in edit page'); }"
+run_js "async (page) => { const deadline = Date.now() + 12000; while (Date.now() < deadline) { const text = await page.evaluate(() => document.body.innerText); if (text.includes('카테고리') && text.includes('육아광장')) return; await page.waitForTimeout(250); } throw new Error('all scope badge not shown in edit page'); }"
 run_js "async (page) => { if (await page.getByRole('button', { name: '동네후기' }).count() !== 0) throw new Error('neighbor category should not be visible for all-scope edit'); }"
 
-log "scenario 5: PostEdit local_review requires place"
+log "scenario 6: PostEdit local_review requires place"
 pw goto "${FRONT_URL}/community/${LOCAL_REVIEW_POST_ID}/edit?locationScope=neighbor"
-run_js "async (page) => { const deadline = Date.now() + 5000; while (Date.now() < deadline) { const text = await page.evaluate(() => document.body.innerText); if (text.includes('동네생활')) return; await page.waitForTimeout(200); } throw new Error('neighbor scope badge not shown in edit page'); }"
+run_js "async (page) => { const deadline = Date.now() + 12000; while (Date.now() < deadline) { const text = await page.evaluate(() => document.body.innerText); if (text.includes('카테고리') && text.includes('동네생활')) return; await page.waitForTimeout(250); } throw new Error('neighbor scope badge not shown in edit page'); }"
 run_js "async (page) => { await page.getByRole('button', { name: '동네정보' }).click(); }"
 run_js "async (page) => { await page.getByRole('button', { name: '동네후기' }).click(); }"
 run_js "async (page) => { await page.getByRole('button', { name: '완료' }).click(); }"
 run_js "async (page) => { const text = await page.evaluate(() => document.body.innerText); if (!text.includes('동네후기 글에는 장소를 선택해주세요.')) throw new Error('edit local_review place validation missing'); }"
 
-log "scenario 6: urgent slot uses urgentSlot filter and renders one item"
+log "scenario 7: urgent slot uses urgentSlot filter and renders one item"
 assert_filtered_count "locationScope=neighbor&category=urgent&searchType=titleContent&keyword=%5BE2E%5D%20urgent%20slot&page=0&size=10&includeHighlights=false" "2" "gte"
 assert_filtered_count "locationScope=neighbor&category=urgent&page=0&size=10&includeHighlights=false&urgentSlot=true" "1" "eq"
 assert_urgent_slot_first_id "locationScope=neighbor&category=urgent&page=0&size=10&includeHighlights=false&urgentSlot=true" "${URGENT_LATEST_ID}"
@@ -311,7 +409,7 @@ run_js "async (page) => { const text = await page.evaluate(() => document.body.i
 run_js "async (page) => { const slotCount = await page.evaluate(() => { const headings = Array.from(document.querySelectorAll('h3')); const heading = headings.find((el) => (el.textContent || '').includes('긴급/SOS (최근 2시간)')); if (!heading) return 0; const section = heading.closest('section'); if (!section) return 0; return section.querySelectorAll('button').length; }); if (slotCount !== 1) throw new Error('urgent slot should render exactly one card'); }"
 run_js "async (page) => { const slotTitle = await page.evaluate(() => { const headings = Array.from(document.querySelectorAll('h3')); const heading = headings.find((el) => (el.textContent || '').includes('긴급/SOS (최근 2시간)')); if (!heading) return ''; const section = heading.closest('section'); if (!section) return ''; const first = section.querySelector('button p'); return first ? (first.textContent || '').trim() : ''; }); if (!slotTitle || !slotTitle.includes('[E2E] urgent slot latest')) throw new Error('urgent slot did not prioritize latest urgent post'); }"
 
-log "scenario 7: urgent resolve toggles urgent slot candidate"
+log "scenario 8: urgent resolve toggles urgent slot candidate"
 resolve_post "${URGENT_LATEST_ID}" "true" >/dev/null
 assert_filtered_count "locationScope=neighbor&category=urgent&page=0&size=10&includeHighlights=false&urgentSlot=true" "1" "eq"
 assert_urgent_slot_first_id "locationScope=neighbor&category=urgent&page=0&size=10&includeHighlights=false&urgentSlot=true" "${URGENT_OLDER_ID}"

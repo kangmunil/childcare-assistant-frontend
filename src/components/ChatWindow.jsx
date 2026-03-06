@@ -5,7 +5,6 @@ import useStore from '../store/useStore';
 import { normalizeMarkdownText } from '../utils/markdownFormatter';
 
 const CHAT_MESSAGE_MAX_LENGTH = 2000;
-const CHAT_INPUT_MAX_HEIGHT = 11.5 * 16; // 6 rows (approx)
 const CHAT_FEEDBACK_REASON_OPTIONS = [
   { code: 'INCORRECT', label: '부정확함' },
   { code: 'UNCLEAR', label: '설명이 모호함' },
@@ -40,10 +39,10 @@ const ChatWindow = () => {
     isAiThinking,
     aiChatMetaUiEnabled,
     aiChatFeedbackEnabled,
-    aiContextMode,
-    manualProfileContext,
-    setAiContextMode,
-    setManualProfileContext,
+    chatProfileConsentStatus,
+    chatManualContextInput,
+    setChatProfileConsentStatus,
+    setChatManualContextInput,
     chatQuery,
     setChatQuery
   } = useStore();
@@ -52,12 +51,21 @@ const ChatWindow = () => {
   const [isPanelVisible, setIsPanelVisible] = useState(isChatOpen);
   const [downvoteTargetId, setDownvoteTargetId] = useState(null);
   const [feedbackSubmittingId, setFeedbackSubmittingId] = useState(null);
+  const [showConsentGuide, setShowConsentGuide] = useState(false);
+  const [isConsentPanelExpanded, setIsConsentPanelExpanded] = useState(true);
+  const [showManualContextInput, setShowManualContextInput] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const navigate = useNavigate();
 
   const isNearMessageLimit = input.length >= 1800;
   const isMessageDisabled = isAiThinking || !input.trim();
+  const isConsentPending = chatProfileConsentStatus === 'PENDING';
+  const isConsentGranted = chatProfileConsentStatus === 'GRANTED';
+  const isConsentDenied = chatProfileConsentStatus === 'DENIED';
+  const hasManualContextInput = chatManualContextInput.trim().length > 0;
+  const showConsentSelectionPanel = isConsentPending || isConsentPanelExpanded;
+  const shouldShowManualContextInput = showConsentSelectionPanel && isConsentDenied && showManualContextInput;
   const normalizedChildren = Array.isArray(children) ? children : [];
   const currentChild = normalizedChildren.find((child) => child.id === activeChildId) || normalizedChildren[0];
   const childDisplayName = currentChild?.name || '아이';
@@ -109,17 +117,11 @@ const ChatWindow = () => {
     if (!isChatOpen) return;
 
     inputRef.current?.focus();
-    requestAnimationFrame(() => {
-      const textarea = inputRef.current;
-      if (!textarea) return;
-      textarea.style.height = 'auto';
-      textarea.style.height = `${Math.min(textarea.scrollHeight, CHAT_INPUT_MAX_HEIGHT)}px`;
-    });
   }, [isChatOpen]);
 
   // 챗 오픈 시 자동 질문 처리
   useEffect(() => {
-    if (isChatOpen && chatQuery && !isAiThinking) {
+    if (isChatOpen && chatQuery && !isAiThinking && !isConsentPending) {
       const timer = setTimeout(async () => {
         const trimmedChatQuery = chatQuery.trim();
         if (!trimmedChatQuery) {
@@ -134,16 +136,7 @@ const ChatWindow = () => {
 
       return () => clearTimeout(timer);
     }
-  }, [isChatOpen, chatQuery, isAiThinking, addUserMessage, generateAiResponse, setChatQuery]);
-
-  // 입력창 높이 자동 조절 (최대 6줄)
-  useEffect(() => {
-    const textarea = inputRef.current;
-    if (!textarea) return;
-
-    textarea.style.height = 'auto';
-    textarea.style.height = `${Math.min(textarea.scrollHeight, CHAT_INPUT_MAX_HEIGHT)}px`;
-  }, [input]);
+  }, [isChatOpen, chatQuery, isAiThinking, isConsentPending, addUserMessage, generateAiResponse, setChatQuery]);
 
   useEffect(() => {
     const prefersReducedMotion = typeof window !== 'undefined'
@@ -201,10 +194,28 @@ const ChatWindow = () => {
     e.preventDefault();
     const trimmedInput = input.trim();
     if (!trimmedInput || isAiThinking) return;
+    if (isConsentPending) {
+      setShowConsentGuide(true);
+      return;
+    }
 
     addUserMessage(trimmedInput);
     setInput('');
     await generateAiResponse();
+  };
+
+  const handleCloseChat = () => {
+    setShowConsentGuide(false);
+    setIsConsentPanelExpanded(true);
+    setShowManualContextInput(false);
+    closeChat();
+  };
+
+  const handleConsentSelection = (status) => {
+    setChatProfileConsentStatus(status);
+    setShowConsentGuide(false);
+    setIsConsentPanelExpanded(false);
+    setShowManualContextInput(false);
   };
 
   const handleQuickActionClick = (action) => {
@@ -326,11 +337,10 @@ const ChatWindow = () => {
                 type="button"
                 onClick={() => executeMetaAction(action)}
                 disabled={isAiThinking}
-                className={`inline-flex items-center rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors disabled:opacity-50 ${
-                  responseMode === 'FALLBACK'
-                    ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-200'
-                    : 'border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100 dark:border-slate-600 dark:bg-slate-700/50 dark:text-slate-100'
-                }`}
+                className={`inline-flex items-center rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors disabled:opacity-50 ${responseMode === 'FALLBACK'
+                  ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-200'
+                  : 'border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100 dark:border-slate-600 dark:bg-slate-700/50 dark:text-slate-100'
+                  }`}
               >
                 {action.label}
               </button>
@@ -384,11 +394,10 @@ const ChatWindow = () => {
                 type="button"
                 onClick={() => submitFeedback({ message: msg, rating: 'UP' })}
                 disabled={isFeedbackSubmitting || feedbackStatus === 'up' || feedbackStatus === 'down'}
-                className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold ${
-                  feedbackStatus === 'up'
-                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-500/10 dark:text-emerald-200'
-                    : 'border-stone-200 text-stone-600 hover:bg-stone-50 dark:border-slate-600 dark:text-slate-200'
-                } disabled:opacity-60`}
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold ${feedbackStatus === 'up'
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-500/10 dark:text-emerald-200'
+                  : 'border-stone-200 text-stone-600 hover:bg-stone-50 dark:border-slate-600 dark:text-slate-200'
+                  } disabled:opacity-60`}
               >
                 <ThumbsUp className="w-3 h-3" />
                 좋아요
@@ -397,11 +406,10 @@ const ChatWindow = () => {
                 type="button"
                 onClick={() => setDownvoteTargetId((prev) => (prev === msg.id ? null : msg.id))}
                 disabled={isFeedbackSubmitting || feedbackStatus === 'up' || feedbackStatus === 'down'}
-                className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold ${
-                  feedbackStatus === 'down'
-                    ? 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-400/40 dark:bg-rose-500/10 dark:text-rose-200'
-                    : 'border-stone-200 text-stone-600 hover:bg-stone-50 dark:border-slate-600 dark:text-slate-200'
-                } disabled:opacity-60`}
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold ${feedbackStatus === 'down'
+                  ? 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-400/40 dark:bg-rose-500/10 dark:text-rose-200'
+                  : 'border-stone-200 text-stone-600 hover:bg-stone-50 dark:border-slate-600 dark:text-slate-200'
+                  } disabled:opacity-60`}
               >
                 <ThumbsDown className="w-3 h-3" />
                 아쉬워요
@@ -457,7 +465,7 @@ const ChatWindow = () => {
             </div>
           </div>
           <button
-            onClick={closeChat}
+            onClick={handleCloseChat}
             className="text-stone-400 hover:text-white transition-colors p-2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
             aria-label="채팅 창 닫기"
             title="채팅 창 닫기"
@@ -519,47 +527,102 @@ const ChatWindow = () => {
 
         {/* 입력창 */}
         <form onSubmit={handleSend} className="p-4 bg-white dark:bg-slate-900 border-t border-stone-100 dark:border-slate-700 shrink-0">
-          <div className="mb-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-stone-500 dark:text-slate-400">AI 참고정보</span>
-              <div className="inline-flex rounded-full bg-stone-100 dark:bg-slate-800 p-1">
-                <button
-                  type="button"
-                  onClick={() => setAiContextMode('AUTO')}
-                  disabled={isAiThinking}
-                  className={`px-3 py-1 text-xs font-semibold rounded-full transition-colors ${aiContextMode === 'AUTO'
-                    ? 'bg-white dark:bg-slate-700 text-stone-700 dark:text-slate-100 shadow-sm'
-                    : 'text-stone-500 dark:text-slate-400'
+          <div className="mb-3 space-y-2.5">
+            {showConsentSelectionPanel && (
+              <div className="rounded-2xl border border-stone-200 dark:border-slate-700 bg-stone-50/80 dark:bg-slate-800/70 px-3 py-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-semibold text-stone-700 dark:text-slate-200">아이 정보 참고 설정</p>
+                    <p className="mt-1 text-[11px] leading-snug text-stone-500 dark:text-slate-400">
+                      {isConsentGranted && '저장된 아이 정보를 참고해 개인화된 답변을 제공합니다.'}
+                      {isConsentDenied && '저장 정보는 사용하지 않고, 필요 시 아래 입력값만 참고합니다.'}
+                      {isConsentPending && '답변 전 아이 저장정보 참고 여부를 먼저 선택해주세요.'}
+                    </p>
+                  </div>
+                  <span
+                    className={`inline-flex h-6 shrink-0 whitespace-nowrap items-center rounded-full px-2.5 text-[10px] font-semibold leading-none ${
+                      isConsentGranted
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
+                        : isConsentDenied
+                          ? 'bg-stone-200 text-stone-700 dark:bg-slate-700 dark:text-slate-200'
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300'
                     }`}
-                >
-                  자동
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAiContextMode('MANUAL')}
-                  disabled={isAiThinking}
-                  className={`px-3 py-1 text-xs font-semibold rounded-full transition-colors ${aiContextMode === 'MANUAL'
-                    ? 'bg-white dark:bg-slate-700 text-stone-700 dark:text-slate-100 shadow-sm'
-                    : 'text-stone-500 dark:text-slate-400'
-                    }`}
-                >
-                  수동
-                </button>
+                  >
+                    {isConsentGranted ? '동의됨' : isConsentDenied ? '미동의' : '선택 필요'}
+                  </span>
+                </div>
+
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleConsentSelection('GRANTED')}
+                    disabled={isAiThinking}
+                    className={`h-9 rounded-xl border text-[11px] font-semibold transition-colors ${isConsentGranted
+                      ? 'border-[#2D2A26] bg-[#2D2A26] text-white dark:border-amber-400 dark:bg-amber-400 dark:text-amber-950'
+                      : 'border-stone-300 text-stone-600 hover:bg-white dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800'
+                      } disabled:opacity-60`}
+                  >
+                    동의하고 시작
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleConsentSelection('DENIED')}
+                    disabled={isAiThinking}
+                    className={`h-9 rounded-xl border text-[11px] font-semibold transition-colors ${isConsentDenied
+                      ? 'border-stone-600 bg-stone-700 text-white dark:border-slate-500 dark:bg-slate-700'
+                      : 'border-stone-300 text-stone-600 hover:bg-white dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800'
+                      } disabled:opacity-60`}
+                  >
+                    미동의로 시작
+                  </button>
+                </div>
+                {isConsentDenied && (
+                  <div className="mt-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setShowManualContextInput((prev) => !prev)}
+                      className="h-7 rounded-lg border border-stone-300 dark:border-slate-600 px-2 text-[10px] font-semibold text-stone-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700"
+                    >
+                      {shouldShowManualContextInput ? '입력 접기' : hasManualContextInput ? '입력 수정' : '추가입력'}
+                    </button>
+                  </div>
+                )}
+                {!isConsentPending && (
+                  <div className="mt-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowManualContextInput(false);
+                        setIsConsentPanelExpanded(false);
+                      }}
+                      className="h-7 rounded-lg border border-stone-300 dark:border-slate-600 px-2 text-[10px] font-semibold text-stone-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700"
+                    >
+                      접기
+                    </button>
+                  </div>
+                )}
               </div>
-            </div>
-            {aiContextMode === 'MANUAL' && (
+            )}
+
+            {shouldShowManualContextInput && (
               <textarea
-                value={manualProfileContext}
-                onChange={(e) => setManualProfileContext(e.target.value)}
+                value={chatManualContextInput}
+                onChange={(e) => setChatManualContextInput(e.target.value)}
                 disabled={isAiThinking}
                 maxLength={4000}
                 rows={3}
-                placeholder="AI에게 참고시킬 아이 정보(알레르기, 수면, 주의사항 등)를 입력하세요."
+                placeholder="선택: 아이 상태를 직접 적어주세요 (예: 알레르기, 수면 습관)."
                 className="w-full resize-none bg-stone-50 dark:bg-slate-800 border border-stone-200 dark:border-slate-700 text-stone-700 dark:text-slate-100 placeholder:text-stone-400 dark:placeholder:text-slate-500 px-3 py-2 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#2D2A26]/20 dark:focus:ring-amber-400/25 max-h-24 overflow-y-auto [scrollbar-width:thin] [scrollbar-color:#a8a29e_#f5f5f4] dark:[scrollbar-color:#64748b_#0f172a] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-stone-100 dark:[&::-webkit-scrollbar-track]:bg-slate-900 [&::-webkit-scrollbar-thumb]:bg-stone-400 dark:[&::-webkit-scrollbar-thumb]:bg-slate-500 [&::-webkit-scrollbar-thumb]:rounded-full"
               />
             )}
+
+            {showConsentGuide && isConsentPending && (
+              <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 px-1">
+                답변 전에 아이 정보 참고 여부를 선택해주세요.
+              </p>
+            )}
           </div>
-          <div className="relative">
+          <div className="relative block">
             <textarea
               ref={inputRef}
               value={input}
@@ -570,20 +633,30 @@ const ChatWindow = () => {
               maxLength={CHAT_MESSAGE_MAX_LENGTH}
               rows={1}
               aria-label="AI에 질문을 입력하세요"
-              className="w-full min-h-[44px] max-h-32 overflow-y-auto bg-stone-100 dark:bg-slate-800 text-stone-800 dark:text-slate-100 placeholder:text-stone-400 dark:placeholder:text-slate-500 pl-4 pr-12 py-3.5 rounded-full resize-none focus:outline-none focus:ring-2 focus:ring-[#2D2A26]/20 dark:focus:ring-amber-400/25 transition-all font-medium [scrollbar-width:thin] [scrollbar-color:#a8a29e_#f5f5f4] dark:[scrollbar-color:#64748b_#0f172a] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-stone-100 dark:[&::-webkit-scrollbar-track]:bg-slate-900 [&::-webkit-scrollbar-thumb]:bg-stone-400 dark:[&::-webkit-scrollbar-thumb]:bg-slate-500 [&::-webkit-scrollbar-thumb]:rounded-full"
-              style={{ height: 44 }}
+              className="block w-full h-12 overflow-y-auto bg-stone-100 dark:bg-slate-800 text-stone-800 dark:text-slate-100 placeholder:text-stone-400 dark:placeholder:text-slate-500 pl-4 pr-[50px] py-[13px] rounded-[24px] resize-none focus:outline-none focus:ring-2 focus:ring-[#2D2A26]/20 dark:focus:ring-amber-400/25 transition-all font-medium leading-[22px] [scrollbar-width:thin] [scrollbar-color:#a8a29e_#f5f5f4] dark:[scrollbar-color:#64748b_#0f172a] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-stone-100 dark:[&::-webkit-scrollbar-track]:bg-slate-900 [&::-webkit-scrollbar-thumb]:bg-stone-400 dark:[&::-webkit-scrollbar-thumb]:bg-slate-500 [&::-webkit-scrollbar-thumb]:rounded-full"
             />
             <button
               type="submit"
               disabled={isMessageDisabled}
               aria-label="메시지 전송"
-              className="absolute right-2 bottom-2 p-2 bg-[#2D2A26] text-white rounded-full disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transition-transform"
+              className="absolute right-[4px] bottom-[4px] h-[40px] w-[40px] inline-flex items-center justify-center leading-none bg-[#2D2A26] dark:bg-amber-400 text-white dark:text-amber-950 rounded-full disabled:opacity-50 disabled:dark:opacity-30 disabled:cursor-not-allowed hover:scale-105 transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2D2A26]/30 dark:focus-visible:ring-amber-200/60"
             >
-              <Send className="w-4 h-4" />
+              <Send className="w-4 h-4 pr-0.5" />
             </button>
           </div>
-          <div className={`mt-1 px-1 text-[11px] text-right ${isNearMessageLimit ? 'text-amber-600 dark:text-amber-400' : 'text-stone-400 dark:text-slate-500'}`}>
-            {input.length}/{CHAT_MESSAGE_MAX_LENGTH}
+          <div className={`mt-1 px-1 text-[11px] ${isNearMessageLimit ? 'text-amber-600 dark:text-amber-400' : 'text-stone-400 dark:text-slate-500'}`}>
+            <div className="flex h-7 items-center justify-between gap-2">
+              {!showConsentSelectionPanel ? (
+                <button
+                  type="button"
+                  onClick={() => setIsConsentPanelExpanded(true)}
+                  className="h-7 rounded-lg border border-stone-300 dark:border-slate-600 px-2 text-[10px] font-semibold text-stone-600 dark:text-slate-300 hover:bg-stone-50 dark:hover:bg-slate-800 whitespace-nowrap"
+                >
+                  {isConsentGranted ? '참고정보: 동의됨' : '참고정보: 미동의'}
+                </button>
+              ) : <span className="h-7" />}
+              <span className="text-right">{input.length}/{CHAT_MESSAGE_MAX_LENGTH}</span>
+            </div>
           </div>
         </form>
       </div>
@@ -603,7 +676,7 @@ export const FloatingChatButton = () => {
     <div className="fixed z-40 bottom-24 right-6 md:bottom-10 md:right-10">
       <button
         onClick={toggleChat}
-        className="w-16 h-16 bg-[#7C3AED] hover:bg-[#6D28D9] text-white rounded-full shadow-[0_8px_25px_rgba(124,58,237,0.3)] flex items-center justify-center transition-transform hover:scale-110 active:scale-95 relative overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7C3AED]/50"
+        className="w-14 h-14 md:w-16 md:h-16 min-h-11 min-w-11 bg-[#2D2A26] hover:bg-[#3B362F] dark:bg-amber-400 dark:hover:bg-amber-300 text-white dark:text-amber-950 rounded-full shadow-[0_10px_24px_rgba(45,42,38,0.35)] dark:shadow-[0_10px_24px_rgba(251,191,36,0.28)] flex items-center justify-center transition-transform hover:scale-105 active:scale-95 relative overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2D2A26]/45 dark:focus-visible:ring-amber-300"
         aria-label="AI 채팅 열기"
         title="AI 채팅 열기"
       >
