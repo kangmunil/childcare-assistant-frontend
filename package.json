@@ -8,7 +8,13 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:chat-markdown": "node --test tests/chat-markdown-format.test.mjs"
+    "test:chat-markdown": "node --test tests/chat-markdown-format.test.mjs",
+    "test:location-auth-e2e": "scripts/location-auth-no-refresh-e2e.sh",
+    "test:community-policy-e2e": "scripts/community-policy-e2e.sh",
+    "test:community-policy-e2e:local": "scripts/run-community-policy-e2e-local.sh",
+    "test:community-quote-e2e": "scripts/community-quote-navigation-e2e.sh",
+    "test:community-quote-e2e:local": "scripts/run-community-quote-e2e-local.sh",
+    "test:community-quote-e2e:ci": "node tests/community-quote-navigation.ci.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",

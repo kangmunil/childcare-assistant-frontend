@@ -2,10 +2,20 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { supabase } from '../api/supabase'; // [필수] Supabase 클라이언트
 import http from '../api/http'; // [필수] 백엔드 API 통신용 Axios
+import { buildClientFallbackMeta, normalizeDomainList, sanitizeChatMeta } from '../utils/chatMeta';
+import { buildChatRequestContextPolicy } from '../utils/chatRequestContextPolicy';
+
+const CHAT_META_UI_ENABLED = String(import.meta.env.VITE_AI_CHAT_META_UI_ENABLED ?? 'false').toLowerCase() === 'true';
+const CHAT_FEEDBACK_ENABLED = String(import.meta.env.VITE_AI_CHAT_FEEDBACK_ENABLED ?? 'false').toLowerCase() === 'true';
 
 const createInitialChatMessages = () => ([
   { id: 1, role: 'ai', text: '안녕하세요! 육아에 대한 궁금한 점이 있으신가요?' }
 ]);
+
+const createInitialChatConsentState = () => ({
+  chatProfileConsentStatus: 'PENDING',
+  chatManualContextInput: '',
+});
 
 const resolveIntentFromText = (text) => {
   const normalized = (text || '').replace(/\s/g, '');
@@ -88,34 +98,6 @@ const resolveIntentFromText = (text) => {
   };
 };
 
-const normalizeDomainList = (domains) => {
-  if (!Array.isArray(domains)) {
-    return [];
-  }
-  const seen = new Set();
-  return domains
-    .map((domain) => (domain || '').toLowerCase())
-    .filter((domain) => domain.trim())
-    .filter((domain) => {
-      if (seen.has(domain)) {
-        return false;
-      }
-      seen.add(domain);
-      return true;
-    });
-};
-
-const resolveRequiredChild = (intentHint, requestedProfileDomains = []) => {
-  if (intentHint === 'GROWTH_CHECK') {
-    return true;
-  }
-  if (!Array.isArray(requestedProfileDomains)) {
-    return false;
-  }
-
-  return requestedProfileDomains.includes('medical') || requestedProfileDomains.includes('allergy');
-};
-
 const useStore = create(
   persist(
     (set, get) => ({
@@ -137,8 +119,9 @@ const useStore = create(
       chatRequestedProfileDomains: [],
       isAiThinking: false,
       isAiRequestInFlight: false,
-      aiContextMode: 'AUTO',
-      manualProfileContext: '',
+      aiChatMetaUiEnabled: CHAT_META_UI_ENABLED,
+      aiChatFeedbackEnabled: CHAT_FEEDBACK_ENABLED,
+      ...createInitialChatConsentState(),
       aiSessionId: null,
       
       // ==========================================
@@ -225,8 +208,28 @@ const useStore = create(
           const { status, data, message } = response.data;
 
           if (status === 'success') {
-            set({ user: data }); // 화면 즉시 갱신
-            return { success: true, message: '정보가 수정되었습니다.' };
+            // 서버 응답이 일부 필드를 누락해도, 직전에 보낸 값으로 화면 상태를 즉시 보정한다.
+            const previousUser = get().user && typeof get().user === 'object' ? get().user : {};
+            const nextUser = { ...previousUser };
+
+            if (formData && typeof formData === 'object') {
+              Object.entries(formData).forEach(([key, value]) => {
+                if (value !== undefined) {
+                  nextUser[key] = value;
+                }
+              });
+            }
+
+            if (data && typeof data === 'object') {
+              Object.entries(data).forEach(([key, value]) => {
+                if (value !== undefined) {
+                  nextUser[key] = value;
+                }
+              });
+            }
+
+            set({ user: nextUser }); // 화면 즉시 갱신
+            return { success: true, message: '정보가 수정되었습니다.', data: nextUser };
           } 
           return { success: false, message: message || '수정 실패' };
         } catch (error) {
@@ -549,8 +552,8 @@ const useStore = create(
                 activeChildId: nextActiveChildId,
                 aiSessionId: isChildContextChanged ? null : state.aiSessionId,
                 messages: isChildContextChanged ? createInitialChatMessages() : state.messages,
-                aiContextMode: isChildContextChanged ? 'AUTO' : state.aiContextMode,
-                manualProfileContext: isChildContextChanged ? '' : state.manualProfileContext,
+                chatProfileConsentStatus: isChildContextChanged ? 'PENDING' : state.chatProfileConsentStatus,
+                chatManualContextInput: isChildContextChanged ? '' : state.chatManualContextInput,
                 chatQuery: isChildContextChanged ? '' : state.chatQuery,
                 isAiThinking: isChildContextChanged ? false : state.isAiThinking,
                 isAiRequestInFlight: isChildContextChanged ? false : state.isAiRequestInFlight,
@@ -662,7 +665,7 @@ const useStore = create(
 
       // 로그아웃
       logout: async () => {
-        try { await supabase.auth.signOut(); } catch (e) { /* 무시 */ }
+        try { await supabase.auth.signOut(); } catch { /* 무시 */ }
         set({ isLoggedIn: false, user: null, token: null, children: [], activePage: 'dashboard' });
         localStorage.removeItem('sb-xxxx-auth-token'); 
       },
@@ -683,7 +686,7 @@ const useStore = create(
             get().fetchUserInfo();
             get().fetchChildren();
           }
-        } catch (error) {
+        } catch {
            console.log("세션 체크 건너뜀 (테스트 모드)");
         }
       },
@@ -703,28 +706,39 @@ const useStore = create(
           chatQuery: '',
           isAiThinking: false,
           isAiRequestInFlight: false,
-          aiContextMode: 'AUTO',
-          manualProfileContext: '',
+          ...createInitialChatConsentState(),
           messages: createInitialChatMessages(),
         };
       }),
-      toggleChat: () => set((state) => ({ isChatOpen: !state.isChatOpen })),
+      toggleChat: () => set((state) => {
+        const nextIsChatOpen = !state.isChatOpen;
+        return {
+          isChatOpen: nextIsChatOpen,
+          chatQuery: '',
+          ...createInitialChatConsentState(),
+        };
+      }),
       openChatWithQuery: (query, options = {}) => set({
         isChatOpen: true,
         chatQuery: query || '',
         chatIntentHint: options.intentHint || null,
         chatRequestedProfileDomains: normalizeDomainList(options.requestedProfileDomains),
+        ...createInitialChatConsentState(),
       }),
       setChatQuery: (query) => set({ chatQuery: query }),
-      closeChat: () => set({ isChatOpen: false, chatQuery: '' }),
-      setAiContextMode: (mode) => set((state) => {
-        const nextMode = mode === 'MANUAL' ? 'MANUAL' : 'AUTO';
+      closeChat: () => set({
+        isChatOpen: false,
+        chatQuery: '',
+        ...createInitialChatConsentState(),
+      }),
+      setChatProfileConsentStatus: (status) => set((state) => {
+        const nextStatus = status === 'GRANTED' || status === 'DENIED' ? status : 'PENDING';
         return {
-          aiContextMode: nextMode,
-          manualProfileContext: nextMode === 'MANUAL' ? state.manualProfileContext : '',
+          chatProfileConsentStatus: nextStatus,
+          chatManualContextInput: nextStatus === 'DENIED' ? state.chatManualContextInput : '',
         };
       }),
-      setManualProfileContext: (text) => set({ manualProfileContext: text }),
+      setChatManualContextInput: (text) => set({ chatManualContextInput: text }),
       
       // (기존 dummy addChild 제거됨 -> API addChild 사용)
 
@@ -811,16 +825,41 @@ const useStore = create(
       addUserMessage: (text) => set((state) => ({ 
           messages: [...state.messages, { id: Date.now(), role: 'user', text }] 
       })),
+
+      markChatMessageFeedbackStatus: (messageId, feedbackStatus) => set((state) => ({
+        messages: state.messages.map((message) => (
+          message.id === messageId
+            ? { ...message, feedbackStatus }
+            : message
+        ))
+      })),
+
+      submitAiChatFeedback: async (payload) => {
+        if (!CHAT_FEEDBACK_ENABLED) {
+          return { success: false, message: '피드백 기능이 비활성화되어 있습니다.' };
+        }
+
+        try {
+          const response = await http.post('/ai/chat/feedback', payload, { timeout: 10000 });
+          const { status, message } = response.data || {};
+          if (status === 'success') {
+            return { success: true };
+          }
+          return { success: false, message: message || '피드백 전송에 실패했습니다.' };
+        } catch (error) {
+          const msg = error.response?.data?.message || error.message || '피드백 전송 중 오류가 발생했습니다.';
+          return { success: false, message: msg };
+        }
+      },
       
       generateAiResponse: async () => {
         const {
           isAiRequestInFlight,
           messages,
           aiSessionId,
-          children,
           activeChildId,
-          aiContextMode,
-          manualProfileContext,
+          chatProfileConsentStatus,
+          chatManualContextInput,
           chatIntentHint,
           chatRequestedProfileDomains
         } = get();
@@ -838,10 +877,28 @@ const useStore = create(
           isAiRequestInFlight: true,
         });
 
-        const contextMode = aiContextMode === 'MANUAL' ? 'MANUAL' : 'AUTO';
-        const normalizedManualContext = manualProfileContext.trim();
+        const contextPolicy = buildChatRequestContextPolicy({
+          consentStatus: chatProfileConsentStatus,
+          activeChildId,
+          manualContextInput: chatManualContextInput,
+        });
+        if (!contextPolicy.canSend) {
+          set({
+            isAiThinking: false,
+            isAiRequestInFlight: false,
+          });
+          return { success: false, blockedByConsent: true, reason: contextPolicy.reason };
+        }
+
+        const {
+          contextMode,
+          childIdForRequest,
+          profileContextForRequest,
+        } = contextPolicy;
         let nextSessionId = aiSessionId;
         let replyText = 'AI 응답을 가져오지 못했어요. 잠시 후 다시 시도해주세요.';
+        let replyMeta = null;
+        let responseRequestId = null;
         const inferredIntent = resolveIntentFromText(lastUserMsg);
         const requestedProfileDomains = normalizeDomainList(
           chatRequestedProfileDomains && chatRequestedProfileDomains.length > 0
@@ -849,35 +906,17 @@ const useStore = create(
             : inferredIntent.requestedProfileDomains
         );
         const selectedIntent = chatIntentHint || inferredIntent.intentHint;
-        const requiresSelectedChild = resolveRequiredChild(selectedIntent, requestedProfileDomains);
-        const hasNoSelectedChild = requiresSelectedChild && !activeChildId;
         const hasIntentHintForServer = selectedIntent && selectedIntent !== 'AUTO' ? selectedIntent : undefined;
-
-        if (hasNoSelectedChild) {
-          const requiresMedicalOrGrowth = resolveRequiredChild(selectedIntent, requestedProfileDomains);
-          replyText = children.length === 0
-            ? `${requiresMedicalOrGrowth ? '민감' : '개인화'} 정보 기반 답변은 등록된 아이가 있을 때만 가능합니다. 먼저 아이를 등록한 뒤 다시 질문해 주세요.`
-            : `${requiresMedicalOrGrowth ? '민감' : '개인화'} 기반 답변은 자녀를 선택한 뒤 이용할 수 있어요. 먼저 채팅 창 위에서 아이를 선택하고 다시 입력해 주세요.`;
-
-          set((state) => ({
-            isAiThinking: false,
-            isAiRequestInFlight: false,
-            manualProfileContext: contextMode === 'MANUAL' ? '' : state.manualProfileContext,
-            aiSessionId: nextSessionId ?? state.aiSessionId,
-            chatIntentHint: null,
-            chatRequestedProfileDomains: [],
-            messages: [...state.messages, { id: Date.now() + 1, role: 'ai', text: replyText }]
-          }));
-          return;
-        }
 
         try {
           const requestPayload = {
             message: lastUserMsg,
             session_id: aiSessionId || undefined,
-            child_id: activeChildId || undefined,
             context_mode: contextMode,
           };
+          if (childIdForRequest !== undefined) {
+            requestPayload.child_id = childIdForRequest;
+          }
           if (hasIntentHintForServer) {
             requestPayload.intent_hint = hasIntentHintForServer;
           }
@@ -885,8 +924,8 @@ const useStore = create(
             requestPayload.requested_profile_domains = requestedProfileDomains;
           }
 
-          if (contextMode === 'MANUAL') {
-            requestPayload.profile_context = normalizedManualContext;
+          if (profileContextForRequest !== undefined) {
+            requestPayload.profile_context = profileContextForRequest;
           }
 
           const response = await http.post(
@@ -896,32 +935,53 @@ const useStore = create(
           );
 
           const { status, data, message } = response.data;
+          responseRequestId = response.headers?.['x-request-id'] || response.headers?.['X-Request-Id'] || null;
           nextSessionId = data?.session_id ?? nextSessionId;
+          replyMeta = sanitizeChatMeta(data?.meta);
           replyText = status === 'success' && data?.reply
             ? data.reply
             : message || replyText;
         } catch (error) {
           const errorCode = error.response?.data?.code;
+          responseRequestId = error.response?.headers?.['x-request-id'] || error.response?.headers?.['X-Request-Id'] || null;
+          let fallbackCode = 'UNKNOWN_ERROR';
           if (error.code === 'ECONNABORTED' || errorCode === 'AI_001_TIMEOUT') {
             replyText = '응답이 지연되고 있어요. 잠시 후 다시 시도해주세요.';
+            fallbackCode = 'TIMEOUT';
           } else if (errorCode === 'AI_004_UNAVAILABLE') {
             replyText = 'AI 서버 연결이 불안정합니다. 잠시 후 다시 시도해주세요.';
+            fallbackCode = 'UPSTREAM_UNAVAILABLE';
           } else if (errorCode === 'AI_002_UPSTREAM') {
             replyText = 'AI 서비스에서 일시적인 오류가 발생했습니다. 다시 시도해주세요.';
+            fallbackCode = 'UPSTREAM_ERROR';
           } else if (errorCode === 'AI_003_BAD_REQUEST') {
             replyText = error.response?.data?.message || '요청 형식이 올바르지 않습니다.';
+            fallbackCode = 'VALIDATION_ERROR';
           } else {
             replyText = error.response?.data?.message || 'AI 서버와 통신 중 오류가 발생했습니다.';
           }
+          replyMeta = buildClientFallbackMeta({
+            lastUserMsg,
+            fallbackCode,
+            intentHint: selectedIntent || inferredIntent.intentHint || 'AUTO',
+            requestedProfileDomains,
+          });
         } finally {
           set((state) => ({
             isAiThinking: false,
             isAiRequestInFlight: false,
-            manualProfileContext: contextMode === 'MANUAL' ? '' : state.manualProfileContext,
             aiSessionId: nextSessionId ?? state.aiSessionId,
             chatIntentHint: null,
             chatRequestedProfileDomains: [],
-            messages: [...state.messages, { id: Date.now() + 1, role: 'ai', text: replyText }]
+            messages: [...state.messages, {
+              id: Date.now() + Math.floor(Math.random() * 1000),
+              role: 'ai',
+              text: replyText,
+              meta: replyMeta,
+              requestId: responseRequestId || replyMeta?.request_id || null,
+              sessionId: nextSessionId ?? state.aiSessionId ?? null,
+              feedbackStatus: null,
+            }]
           }));
         }
       },
