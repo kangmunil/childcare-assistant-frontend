@@ -1,6 +1,16 @@
 import axios from 'axios';
 import { supabase } from './supabase';
 
+const DEFAULT_AI_CHAT_TIMEOUT_MS = 120000;
+const resolveAiChatTimeoutMs = () => {
+  const parsed = Number(import.meta.env.VITE_AI_CHAT_TIMEOUT_MS ?? DEFAULT_AI_CHAT_TIMEOUT_MS);
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_AI_CHAT_TIMEOUT_MS;
+  }
+  return Math.max(15000, Math.min(180000, Math.floor(parsed)));
+};
+const AI_CHAT_TIMEOUT_MS = resolveAiChatTimeoutMs();
+
 const http = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL + '/api',
   timeout: 5000,
@@ -9,8 +19,8 @@ const http = axios.create({
 // 요청 인터셉터: Supabase 세션 토큰을 헤더에 추가
 http.interceptors.request.use(async (config) => {
   const isAiChatRequest = typeof config.url === 'string' && config.url.includes('/ai/chat');
-  if (isAiChatRequest && (!config.timeout || config.timeout < 45000)) {
-    config.timeout = 45000;
+  if (isAiChatRequest && (!config.timeout || config.timeout < AI_CHAT_TIMEOUT_MS)) {
+    config.timeout = AI_CHAT_TIMEOUT_MS;
   }
   if (isAiChatRequest) {
     config.headers = config.headers || {};
