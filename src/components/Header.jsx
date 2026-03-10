@@ -110,7 +110,7 @@ const Header = () => {
                     {/* 브랜드 로고 */}
                     <div className="flex items-center gap-3 flex-shrink-0 cursor-pointer" onClick={() => navigate('/dashboard')}>
                         <div className="w-10 h-10 rounded-2xl flex-shrink-0 flex items-center justify-center overflow-hidden">
-                            <img src="/베베헬퍼로고.png" alt="BebeHelper Logo" className="w-full h-full object-contain" />
+                            <img src="/logo.png" alt="BebeHelper Logo" className="w-full h-full object-contain" />
                         </div>
                         <span className="text-xl font-serif-kr font-bold text-stone-800 dark:text-white transition-all duration-300 whitespace-nowrap md:hidden lg:block">
                             BebeHelper
