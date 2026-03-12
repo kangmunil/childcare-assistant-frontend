@@ -1,13 +1,94 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = typeof import.meta.env.VITE_SUPABASE_URL === 'string'
+  ? import.meta.env.VITE_SUPABASE_URL.trim()
+  : '';
+const supabaseKey = typeof import.meta.env.VITE_SUPABASE_ANON_KEY === 'string'
+  ? import.meta.env.VITE_SUPABASE_ANON_KEY.trim()
+  : '';
 
-// Supabase 클라이언트 생성 (인증, 파일 업로드 등)
-export const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: {
-    autoRefreshToken: true,        // 토큰 자동 갱신
-    persistSession: true,          // 세션 로컬스토리지 저장
-    detectSessionInUrl: true,      // OAuth 콜백 URL에서 세션 자동 감지
-  }
-});
+const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey);
+const canUseDisabledClient = !isSupabaseConfigured && import.meta.env.PROD !== true;
+const disabledClientMessage = 'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable auth flows.';
+
+function createDisabledAuthResult(message, data = null) {
+  return {
+    data,
+    error: new Error(message),
+  };
+}
+
+function createDisabledSupabaseClient() {
+  const auth = {
+    async getSession() {
+      return {
+        data: { session: null },
+        error: null,
+      };
+    },
+
+    onAuthStateChange(callback) {
+      queueMicrotask(() => {
+        callback('INITIAL_SESSION', null);
+      });
+
+      return {
+        data: {
+          subscription: {
+            unsubscribe() {},
+          },
+        },
+      };
+    },
+
+    async signInWithOAuth() {
+      return createDisabledAuthResult(disabledClientMessage);
+    },
+
+    async signInWithPassword() {
+      return createDisabledAuthResult(disabledClientMessage, {
+        user: null,
+        session: null,
+      });
+    },
+
+    async signUp() {
+      return createDisabledAuthResult(disabledClientMessage, {
+        user: null,
+        session: null,
+      });
+    },
+
+    async signOut() {
+      return { error: null };
+    },
+
+    async resetPasswordForEmail() {
+      return { error: new Error(disabledClientMessage) };
+    },
+
+    async updateUser() {
+      return { error: new Error(disabledClientMessage) };
+    },
+  };
+
+  return { auth };
+}
+
+if (!isSupabaseConfigured && canUseDisabledClient) {
+  console.warn('[supabase] Missing VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY. Falling back to a disabled client in non-production mode.');
+}
+
+export const supabase = isSupabaseConfigured
+  ? createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+      },
+    })
+  : canUseDisabledClient
+    ? createDisabledSupabaseClient()
+    : (() => {
+        throw new Error(disabledClientMessage);
+      })();
