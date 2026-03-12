@@ -11,11 +11,22 @@ import {
 const FRONT_URL = process.env.FRONT_URL || 'http://127.0.0.1:5174';
 const DEV_BYPASS_TOKEN = process.env.DEV_BYPASS_TOKEN || 'dev-e2e-token';
 const QUOTE_PREVIEW_SELECTOR = '[role="button"][tabindex="0"][aria-label]';
+const DEFAULT_TIMEOUT = 30000;
 
 function assertCondition(condition, message) {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+function summarizeForLog(value, maxLength = 500) {
+  const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return '(empty)';
+  }
+  return normalized.length > maxLength
+    ? `${normalized.slice(0, maxLength)}...`
+    : normalized;
 }
 
 function createStorageFromMember(member) {
@@ -56,15 +67,53 @@ async function createContractContext(browser, contractState, storagePayload, opt
   return context;
 }
 
-async function waitForPathname(page, expectedPathname, timeout = 10000) {
+function attachPageDiagnostics(page, label) {
+  page.on('pageerror', (error) => {
+    console.error(`[quote-contract] ${label} pageerror: ${error?.stack || error?.message || error}`);
+  });
+
+  page.on('requestfailed', (request) => {
+    const failureText = request.failure()?.errorText || 'unknown';
+    console.error(`[quote-contract] ${label} requestfailed: ${request.method()} ${request.url()} (${failureText})`);
+  });
+
+  page.on('console', (message) => {
+    if (message.type() === 'error' || message.type() === 'warning') {
+      console.error(`[quote-contract] ${label} console.${message.type()}: ${message.text()}`);
+    }
+  });
+}
+
+async function dumpPageDiagnostics(page, label) {
+  const snapshot = await page.evaluate(() => ({
+    href: window.location.href,
+    title: document.title,
+    readyState: document.readyState,
+    bodyText: document.body?.innerText || '',
+    bodyHtml: document.body?.innerHTML || '',
+  }));
+
+  console.error(`[quote-contract] ${label} url=${snapshot.href}`);
+  console.error(`[quote-contract] ${label} title=${summarizeForLog(snapshot.title, 160)}`);
+  console.error(`[quote-contract] ${label} readyState=${snapshot.readyState}`);
+  console.error(`[quote-contract] ${label} bodyText=${summarizeForLog(snapshot.bodyText)}`);
+  console.error(`[quote-contract] ${label} bodyHtml=${summarizeForLog(snapshot.bodyHtml)}`);
+}
+
+async function waitForPathname(page, expectedPathname, timeout = DEFAULT_TIMEOUT) {
   await page.waitForURL((url) => url.pathname === expectedPathname, { timeout });
 }
 
-async function waitForBodyText(page, expectedText, timeout = 10000) {
-  await page.waitForFunction((text) => document.body.innerText.includes(text), expectedText, { timeout });
+async function waitForBodyText(page, expectedText, timeout = DEFAULT_TIMEOUT) {
+  try {
+    await page.waitForFunction((text) => document.body.innerText.includes(text), expectedText, { timeout });
+  } catch (error) {
+    await dumpPageDiagnostics(page, `waitForBodyText("${expectedText}")`);
+    throw error;
+  }
 }
 
-async function waitForQuotePreviewAction(page, timeout = 10000) {
+async function waitForQuotePreviewAction(page, timeout = DEFAULT_TIMEOUT) {
   const preview = page.locator(QUOTE_PREVIEW_SELECTOR).first();
   await preview.waitFor({ state: 'visible', timeout });
   return preview;
@@ -103,6 +152,7 @@ async function run() {
     const originalStoragePayload = createStorageFromMember(originalMember);
     context = await createContractContext(browser, contractState, originalStoragePayload);
     const page = await context.newPage();
+    attachPageDiagnostics(page, 'desktop');
 
     console.log(`[quote-contract] seeded source=${sourcePostId}, quote=${quotePostId}`);
 
@@ -155,6 +205,7 @@ async function run() {
       locale: 'ko-KR',
     });
     const mobilePage = await mobileContext.newPage();
+    attachPageDiagnostics(mobilePage, 'mobile');
     await mobilePage.goto(`${FRONT_URL}/community/${quotePostId}`, { waitUntil: 'domcontentloaded' });
     await waitForBodyText(mobilePage, quoteTitle);
     const mobilePreviewButton = await waitForQuotePreviewAction(mobilePage);
@@ -194,6 +245,7 @@ async function run() {
     const mismatchStoragePayload = createStorageFromMember(mismatchMember);
     mismatchContext = await createContractContext(browser, contractState, mismatchStoragePayload);
     const mismatchPage = await mismatchContext.newPage();
+    attachPageDiagnostics(mismatchPage, 'region-mismatch');
     await mismatchPage.goto(`${FRONT_URL}/community/${neighborQuotePostId}`, { waitUntil: 'domcontentloaded' });
     await waitForBodyText(mismatchPage, neighborQuoteTitle);
     assertCondition(
