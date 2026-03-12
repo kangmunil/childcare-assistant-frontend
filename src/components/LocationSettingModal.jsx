@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { X, MapPin, Navigation, Check, AlertCircle, Loader2 } from 'lucide-react';
 import api from '../lib/api';
 
@@ -6,6 +6,8 @@ const TARGET_ACCURACY_METERS = 80;
 const WARN_ACCURACY_METERS = 200;
 const WATCH_TIMEOUT_MS = 12000;
 const MAX_SAMPLE_COUNT = 5;
+const REVERSE_GEOCODE_TIMEOUT_MS = 8000;
+const REVERSE_GEOCODE_TIMEOUT_MESSAGE = '주소 확인 요청이 지연되고 있어요. 다시 시도해주세요.';
 
 const pickFirstNonEmpty = (...values) => {
     for (const value of values) {
@@ -30,13 +32,30 @@ const toGeoErrorMessage = (error) => {
     }
 };
 
-const collectBestPosition = () =>
+const createAbortError = () => {
+    if (typeof DOMException === 'function') {
+        return new DOMException('요청이 취소되었습니다.', 'AbortError');
+    }
+    const error = new Error('요청이 취소되었습니다.');
+    error.name = 'AbortError';
+    return error;
+};
+
+const isAbortError = (error) => error?.name === 'AbortError';
+
+const collectBestPosition = (signal) =>
     new Promise((resolve, reject) => {
+        if (signal?.aborted) {
+            reject(createAbortError());
+            return;
+        }
+
         let watchId = null;
         let timeoutId = null;
         let settled = false;
         let bestPosition = null;
         let sampleCount = 0;
+        const abortHandler = () => rejectOnce(createAbortError());
 
         const clearAll = () => {
             if (watchId !== null) {
@@ -44,6 +63,9 @@ const collectBestPosition = () =>
             }
             if (timeoutId !== null) {
                 window.clearTimeout(timeoutId);
+            }
+            if (signal) {
+                signal.removeEventListener('abort', abortHandler);
             }
         };
 
@@ -60,6 +82,10 @@ const collectBestPosition = () =>
             clearAll();
             reject(error);
         };
+
+        if (signal) {
+            signal.addEventListener('abort', abortHandler, { once: true });
+        }
 
         watchId = navigator.geolocation.watchPosition(
             (position) => {
@@ -103,6 +129,39 @@ const collectBestPosition = () =>
         }, WATCH_TIMEOUT_MS);
     });
 
+const reverseGeocode = async ({ latitude, longitude, signal }) => {
+    if (signal?.aborted) {
+        throw createAbortError();
+    }
+
+    const timeoutController = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+        timeoutController.abort();
+    }, REVERSE_GEOCODE_TIMEOUT_MS);
+
+    const syncAbort = () => timeoutController.abort();
+    if (signal) {
+        signal.addEventListener('abort', syncAbort, { once: true });
+    }
+
+    try {
+        const response = await api.get(`/geo/reverse?lat=${latitude}&lng=${longitude}`, {
+            signal: timeoutController.signal
+        });
+        return response;
+    } catch (error) {
+        if (timeoutController.signal.aborted && !signal?.aborted) {
+            throw new Error(REVERSE_GEOCODE_TIMEOUT_MESSAGE);
+        }
+        throw error;
+    } finally {
+        window.clearTimeout(timeoutId);
+        if (signal) {
+            signal.removeEventListener('abort', syncAbort);
+        }
+    }
+};
+
 /**
  * GPS 기반 동네 인증 모달
  * - Browser Geolocation API로 현재 위치 획득
@@ -113,6 +172,39 @@ const LocationSettingModal = ({ isOpen, onClose, onSave, currentRegionName }) =>
     const [status, setStatus] = useState('idle'); // idle, loading, confirm, error
     const [errorMessage, setErrorMessage] = useState('');
     const [detectedLocation, setDetectedLocation] = useState(null);
+    const authAbortControllerRef = useRef(null);
+
+    const resetModalState = useCallback(() => {
+        setStatus('idle');
+        setErrorMessage('');
+        setDetectedLocation(null);
+    }, []);
+
+    const cancelLocationAuth = useCallback(() => {
+        const controller = authAbortControllerRef.current;
+        if (!controller) {
+            return;
+        }
+        controller.abort();
+        authAbortControllerRef.current = null;
+    }, []);
+
+    const handleModalClose = useCallback(() => {
+        cancelLocationAuth();
+        resetModalState();
+        onClose();
+    }, [cancelLocationAuth, onClose, resetModalState]);
+
+    useEffect(() => () => {
+        cancelLocationAuth();
+    }, [cancelLocationAuth]);
+
+    useEffect(() => {
+        if (!isOpen) {
+            cancelLocationAuth();
+            resetModalState();
+        }
+    }, [isOpen, cancelLocationAuth, resetModalState]);
 
     // GPS로 현재 위치 인증하기
     const handleLocationAuth = useCallback(() => {
@@ -122,17 +214,30 @@ const LocationSettingModal = ({ isOpen, onClose, onSave, currentRegionName }) =>
             return;
         }
 
+        cancelLocationAuth();
+        const controller = new AbortController();
+        authAbortControllerRef.current = controller;
+
         setStatus('loading');
         setErrorMessage('');
+        setDetectedLocation(null);
 
         (async () => {
             try {
-                const position = await collectBestPosition();
+                const position = await collectBestPosition(controller.signal);
                 const { latitude, longitude, accuracy } = position.coords;
 
                 // Backend Proxy를 통해 Kakao API 호출
-                const response = await api.get(`/geo/reverse?lat=${latitude}&lng=${longitude}`);
+                const response = await reverseGeocode({
+                    latitude,
+                    longitude,
+                    signal: controller.signal
+                });
                 const data = response?.data || response;
+
+                if (controller.signal.aborted) {
+                    return;
+                }
 
                 if (data.documents && data.documents.length > 0) {
                     const doc = data.documents[0];
@@ -184,12 +289,19 @@ const LocationSettingModal = ({ isOpen, onClose, onSave, currentRegionName }) =>
                     setStatus('error');
                 }
             } catch (error) {
+                if (controller.signal.aborted || isAbortError(error)) {
+                    return;
+                }
                 console.error('Geolocation/reverse geocoding failed:', error);
                 setErrorMessage(error?.message || toGeoErrorMessage(error));
                 setStatus('error');
+            } finally {
+                if (authAbortControllerRef.current === controller) {
+                    authAbortControllerRef.current = null;
+                }
             }
         })();
-    }, []);
+    }, [cancelLocationAuth]);
 
     // 위치 확인 후 저장
     const handleConfirm = async () => {
@@ -207,7 +319,7 @@ const LocationSettingModal = ({ isOpen, onClose, onSave, currentRegionName }) =>
             if (result && result.success === false) {
                 throw new Error(result.message || '저장에 실패했습니다.');
             }
-            onClose();
+            handleModalClose();
         } catch (error) {
             setErrorMessage(error.message || '저장에 실패했습니다.');
             setStatus('error');
@@ -216,9 +328,8 @@ const LocationSettingModal = ({ isOpen, onClose, onSave, currentRegionName }) =>
 
     // 다시 시도
     const handleRetry = () => {
-        setStatus('idle');
-        setErrorMessage('');
-        setDetectedLocation(null);
+        cancelLocationAuth();
+        resetModalState();
     };
 
     if (!isOpen) return null;
@@ -243,7 +354,7 @@ const LocationSettingModal = ({ isOpen, onClose, onSave, currentRegionName }) =>
                         )}
                     </div>
                     <button
-                        onClick={onClose}
+                        onClick={handleModalClose}
                         className="p-2 bg-gray-50 dark:bg-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
                     >
                         <X className="w-5 h-5 text-gray-400" />
@@ -275,7 +386,7 @@ const LocationSettingModal = ({ isOpen, onClose, onSave, currentRegionName }) =>
                     <div className="py-12 flex flex-col items-center gap-4">
                         <Loader2 className="w-12 h-12 text-amber-500 animate-spin" />
                         <p className="text-stone-600 dark:text-gray-300 font-medium">
-                            현재 위치를 여러 번 측정하고 있어요...
+                            {detectedLocation ? '동네 정보를 저장하고 있어요...' : '현재 위치를 여러 번 측정하고 있어요...'}
                         </p>
                     </div>
                 )}

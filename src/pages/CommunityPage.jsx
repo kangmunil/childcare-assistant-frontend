@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams, useNavigationType } from 'react-router-dom';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search, PenLine, MessageSquare, Heart, User, MapPin, ChevronDown, Crown, AlertCircle, Sparkles, HelpCircle, ShoppingBag, Coffee, BookOpen, Map, Building2, Zap, Gift, Globe } from 'lucide-react';
+import { Search, PenLine, MessageSquare, Heart, Repeat2, User, MapPin, ChevronDown, Crown, AlertCircle, Sparkles, HelpCircle, ShoppingBag, Coffee, BookOpen, Map, Building2, Zap, Gift, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../lib/api';
 import { getLocalLikeMap, setLocalLike } from '../lib/likeStorage';
@@ -29,6 +29,24 @@ const CATEGORIES = {
   neighbor: ['urgent', 'local_info', 'local_review', 'local_gathering', 'local_share']
 };
 
+const getPostScopeBadgeMeta = (postScope) => {
+  if (String(postScope || '').toLowerCase() === 'neighbor') {
+    return {
+      label: '동네생활',
+      Icon: MapPin,
+      className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+    };
+  }
+
+  return {
+    label: '육아광장',
+    Icon: Globe,
+    className: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
+  };
+};
+
+const LoadingProgressMotion = motion.div;
+
 const CommunityPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -37,12 +55,17 @@ const CommunityPage = () => {
   const sizeParam = Math.max(1, Number(searchParams.get('size')) || 20);
   const activeTab = searchParams.get('tab') || 'all';
   const queryParam = searchParams.get('query') || '';
+  const sortParamRaw = searchParams.get('sort');
   const searchParamsKey = searchParams.toString();
 
   const [searchInput, setSearchInput] = useState(queryParam);
   const [likeCounts, setLikeCounts] = useState({});
   const [likedMap, setLikedMap] = useState({});
   const [likeLoading, setLikeLoading] = useState({});
+  const [repostCounts, setRepostCounts] = useState({});
+  const [repostedMap, setRepostedMap] = useState({});
+  const [repostLoading, setRepostLoading] = useState({});
+  const [openRepostMenuId, setOpenRepostMenuId] = useState(null);
   const [imageLoadErrorMap, setImageLoadErrorMap] = useState({});
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const containerRef = useRef(null);
@@ -63,10 +86,11 @@ const CommunityPage = () => {
   const locationScope = locationScopeParam === 'neighbor' || locationScopeParam === 'all'
     ? locationScopeParam
     : (hasUserLocation ? 'neighbor' : 'all');
+  const sort = locationScope === 'all' && sortParamRaw === 'popular' ? 'popular' : 'latest';
   const userRegionLabels = useMemo(() => getRegionLabels(user?.regionName), [user?.regionName]);
   const isNeighborScopeBlocked = locationScope === 'neighbor' && !hasUserLocation;
 
-  const queryKey = ['community', 'list', locationScope, activeTab, queryParam.trim(), pageParam, sizeParam];
+  const queryKey = ['community', 'list', locationScope, sort, activeTab, queryParam.trim(), pageParam, sizeParam];
 
   const {
     data,
@@ -82,6 +106,9 @@ const CommunityPage = () => {
         params.set('category', activeTab);
       }
       params.set('locationScope', locationScope);
+      if (locationScope === 'all') {
+        params.set('sort', sort);
+      }
       params.set('page', String(pageParam - 1));
       params.set('size', String(sizeParam));
       params.set('includeHighlights', 'false');
@@ -98,7 +125,37 @@ const CommunityPage = () => {
     placeholderData: keepPreviousData
   });
 
+  const showUrgentSlot = locationScope === 'neighbor' && activeTab === 'all' && !queryParam.trim();
+  const { data: urgentSlotData } = useQuery({
+    queryKey: ['community', 'urgent-slot', locationScope],
+    queryFn: async ({ signal }) => {
+      const params = new URLSearchParams();
+      params.set('locationScope', 'neighbor');
+      params.set('category', 'urgent');
+      params.set('page', '0');
+      params.set('size', '1');
+      params.set('includeHighlights', 'false');
+      params.set('urgentSlot', 'true');
+      const response = await api.get(`/boards/community/items?${params.toString()}`, { signal });
+      return response?.data || response || {};
+    },
+    enabled: showUrgentSlot && !isNeighborScopeBlocked,
+    staleTime: 1000 * 30,
+    gcTime: 1000 * 60 * 10,
+  });
+
   const posts = useMemo(() => (Array.isArray(data?.items) ? data.items : []), [data?.items]);
+  const urgentSlotPosts = useMemo(
+    () => (Array.isArray(urgentSlotData?.items) ? urgentSlotData.items : []),
+    [urgentSlotData?.items]
+  );
+  const visiblePosts = useMemo(() => {
+    if (!showUrgentSlot || urgentSlotPosts.length === 0) return posts;
+    const urgentIds = new Set(urgentSlotPosts.map((post) => String(post.id)));
+    return posts.filter((post) => !urgentIds.has(String(post.id)));
+  }, [posts, showUrgentSlot, urgentSlotPosts]);
+  const hasUrgentSlot = showUrgentSlot && urgentSlotPosts.length > 0;
+  const hasVisiblePosts = visiblePosts.length > 0;
   const pagination = useMemo(() => ({
     totalPages: data?.totalPages ?? 0,
     currentPage: data?.currentPage ?? 0,
@@ -117,8 +174,14 @@ const CommunityPage = () => {
   }, [searchParams]);
 
   const applyLocationScope = useCallback((nextScope, { replace = true } = {}) => {
+    const normalizedScope = nextScope === 'neighbor' ? 'neighbor' : 'all';
     const nextParams = new URLSearchParams(searchParamsRef.current);
-    nextParams.set('locationScope', nextScope === 'neighbor' ? 'neighbor' : 'all');
+    nextParams.set('locationScope', normalizedScope);
+    if (normalizedScope === 'neighbor') {
+      nextParams.delete('sort');
+    } else if (!nextParams.get('sort')) {
+      nextParams.set('sort', 'latest');
+    }
     nextParams.delete('page');
     setSearchParams(nextParams, { replace });
   }, [setSearchParams]);
@@ -127,6 +190,24 @@ const CommunityPage = () => {
     if (locationScopeParam === locationScope) return;
     applyLocationScope(locationScope, { replace: true });
   }, [locationScope, locationScopeParam, applyLocationScope]);
+
+  useEffect(() => {
+    const currentSort = searchParamsRef.current.get('sort');
+    if (locationScope !== 'all') {
+      if (currentSort != null) {
+        const nextParams = new URLSearchParams(searchParamsRef.current);
+        nextParams.delete('sort');
+        setSearchParams(nextParams, { replace: true });
+      }
+      return;
+    }
+
+    if (currentSort !== 'latest' && currentSort !== 'popular') {
+      const nextParams = new URLSearchParams(searchParamsRef.current);
+      nextParams.set('sort', 'latest');
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [locationScope, setSearchParams]);
 
   useEffect(() => {
     const root = containerRef.current;
@@ -243,14 +324,20 @@ const CommunityPage = () => {
     const localLikeMap = getLocalLikeMap(user?.id);
     const nextLikeCounts = {};
     const nextLikedMap = {};
+    const nextRepostCounts = {};
+    const nextRepostedMap = {};
 
     posts.forEach((item) => {
       nextLikeCounts[item.id] = item.likeCount ?? 0;
       nextLikedMap[item.id] = item.liked ?? localLikeMap[item.id] ?? false;
+      nextRepostCounts[item.id] = item.repostCount ?? 0;
+      nextRepostedMap[item.id] = item.reposted ?? false;
     });
 
     setLikeCounts(nextLikeCounts);
     setLikedMap(nextLikedMap);
+    setRepostCounts(nextRepostCounts);
+    setRepostedMap(nextRepostedMap);
     setImageLoadErrorMap((prev) => {
       const next = {};
       posts.forEach((item) => {
@@ -263,13 +350,29 @@ const CommunityPage = () => {
     });
   }, [posts, user?.id]);
 
-  const categoryLabels = {
-    qna: '질문',
-    daily: '일상공유',
-    tip: '육아꿀팁',
-    urgent: '지금급해요',
-    hospital: '병원/기관'
-  };
+  useEffect(() => {
+    if (!openRepostMenuId) return undefined;
+
+    const handlePointerDown = (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest('[data-repost-menu]') || target.closest('[data-repost-trigger]')) return;
+      setOpenRepostMenuId(null);
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setOpenRepostMenuId(null);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown, true);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown, true);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [openRepostMenuId]);
 
   const formatRelativeTime = (value) => {
     if (!value) return '';
@@ -325,6 +428,49 @@ const CommunityPage = () => {
     );
   };
 
+  const handleOpenQuotedPost = (event, quotePostId, postBoardSlug) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    if (!quotePostId) return;
+    handleOpenPost(quotePostId, postBoardSlug);
+  };
+
+  const handleToggleRepost = async (postId) => {
+    if (repostLoading[postId]) return;
+
+    const targetPost = posts.find((item) => String(item.id) === String(postId));
+    const boardSlug = targetPost?.boardSlug || 'community';
+    const wasReposted = !!repostedMap[postId];
+    const previousCount = repostCounts[postId] ?? targetPost?.repostCount ?? 0;
+    const nextCount = Math.max(0, previousCount + (wasReposted ? -1 : 1));
+
+    setRepostLoading((prev) => ({ ...prev, [postId]: true }));
+    setRepostedMap((prev) => ({ ...prev, [postId]: !wasReposted }));
+    setRepostCounts((prev) => ({ ...prev, [postId]: nextCount }));
+
+    try {
+      const response = wasReposted
+        ? await api.delete(`/boards/${boardSlug}/items/${postId}/repost`)
+        : await api.post(`/boards/${boardSlug}/items/${postId}/repost`);
+      const data = response?.data ?? response;
+      const finalCount = Number.isFinite(data) ? data : nextCount;
+      setRepostCounts((prev) => ({ ...prev, [postId]: finalCount }));
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['community'] }),
+        queryClient.invalidateQueries({ queryKey: ['community', 'detail', String(postId)] }),
+        queryClient.invalidateQueries({ queryKey: ['community', 'highlights'] }),
+      ]);
+    } catch {
+      setRepostedMap((prev) => ({ ...prev, [postId]: wasReposted }));
+      setRepostCounts((prev) => ({ ...prev, [postId]: previousCount }));
+    } finally {
+      setRepostLoading((prev) => ({ ...prev, [postId]: false }));
+    }
+  };
+
   const handleSelectLocationScope = (nextScope) => {
     if (nextScope === 'neighbor' && !hasUserLocation) {
       setLocationModalOpen(true);
@@ -332,6 +478,17 @@ const CommunityPage = () => {
       return;
     }
     applyLocationScope(nextScope, { replace: true });
+  };
+
+  const handleSelectSort = (nextSort) => {
+    if (locationScope !== 'all') return;
+    const normalizedSort = nextSort === 'popular' ? 'popular' : 'latest';
+    if (sort === normalizedSort) return;
+
+    const nextParams = new URLSearchParams(searchParamsRef.current);
+    nextParams.set('sort', normalizedSort);
+    nextParams.delete('page');
+    setSearchParams(nextParams, { replace: true });
   };
 
   return (
@@ -403,7 +560,7 @@ const CommunityPage = () => {
         <div className="relative h-1 mt-2 mb-1 overflow-hidden">
           <AnimatePresence>
             {isFetching && !isLoading && (
-              <motion.div
+              <LoadingProgressMotion
                 initial={{ x: '-100%' }}
                 animate={{ x: '100%' }}
                 transition={{
@@ -417,36 +574,58 @@ const CommunityPage = () => {
           </AnimatePresence>
         </div>
 
-        <div className="flex gap-2 mt-3 overflow-x-auto no-scrollbar pb-1">
-          {['all', ...(locationScope === 'neighbor' ? CATEGORIES.neighbor : CATEGORIES.all)].map((tab) => {
-            const isSelected = activeTab === tab;
-            const meta = categoryMeta[tab];
-            const Icon = meta?.icon || (tab === 'all' ? Globe : Coffee);
-            const label = tab === 'all' ? '전체' : (meta?.label || tab);
+        <div className="mt-3 flex items-start gap-2">
+          <div className="min-w-0 flex-1 flex flex-wrap gap-2">
+            {['all', ...(locationScope === 'neighbor' ? CATEGORIES.neighbor : CATEGORIES.all)].map((tab) => {
+              const isSelected = activeTab === tab;
+              const meta = categoryMeta[tab];
+              const Icon = meta?.icon || (tab === 'all' ? Globe : Coffee);
+              const label = tab === 'all' ? '전체' : (meta?.label || tab);
 
-            return (
-              <button
-                key={tab}
-                onClick={() => {
-                  const nextParams = new URLSearchParams(searchParams);
-                  if (tab === 'all') {
-                    nextParams.delete('tab');
-                  } else {
-                    nextParams.set('tab', tab);
-                  }
-                  nextParams.delete('page');
-                  setSearchParams(nextParams, { replace: true });
-                }}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${isSelected
-                  ? (tab === 'urgent' ? 'bg-rose-500 text-white dark:bg-rose-600' : 'bg-stone-800 text-white dark:bg-amber-500 dark:text-gray-900')
-                  : (tab === 'urgent' ? 'bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 dark:bg-gray-800 dark:border-rose-900/50 dark:text-rose-400 dark:hover:bg-rose-900/30' : 'bg-white border border-stone-300 text-stone-600 hover:bg-stone-100 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700')
-                  }`}
-              >
-                <Icon className={`w-3.5 h-3.5 ${isSelected && tab === 'urgent' ? 'animate-pulse' : ''}`} strokeWidth={2.5} />
-                {label}
-              </button>
-            )
-          })}
+              return (
+                <button
+                  key={tab}
+                  onClick={() => {
+                    const nextParams = new URLSearchParams(searchParams);
+                    if (tab === 'all') {
+                      nextParams.delete('tab');
+                    } else {
+                      nextParams.set('tab', tab);
+                    }
+                    nextParams.delete('page');
+                    setSearchParams(nextParams, { replace: true });
+                  }}
+                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${isSelected
+                    ? (tab === 'urgent' ? 'bg-rose-500 text-white dark:bg-rose-600' : 'bg-stone-800 text-white dark:bg-amber-500 dark:text-gray-900')
+                    : (tab === 'urgent' ? 'bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 dark:bg-gray-800 dark:border-rose-900/50 dark:text-rose-400 dark:hover:bg-rose-900/30' : 'bg-white border border-stone-300 text-stone-600 hover:bg-stone-100 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700')
+                    }`}
+                >
+                  <Icon className={`w-3.5 h-3.5 ${isSelected && tab === 'urgent' ? 'animate-pulse' : ''}`} strokeWidth={2.5} />
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          {locationScope === 'all' && (
+            <div className="shrink-0 flex items-center gap-2 pt-1">
+              <label htmlFor="community-sort" className="text-[11px] font-semibold text-stone-500 dark:text-gray-400">
+                정렬
+              </label>
+              <div className="relative inline-flex">
+                <select
+                  id="community-sort"
+                  aria-label="커뮤니티 정렬 선택"
+                  value={sort}
+                  onChange={(event) => handleSelectSort(event.target.value)}
+                  className="appearance-none cursor-pointer rounded-full border border-stone-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 pr-8 py-1.5 text-[11px] font-bold text-stone-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300 dark:focus:ring-amber-500"
+                >
+                  <option value="latest">최신순</option>
+                  <option value="popular">인기순</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-stone-500 dark:text-gray-400" />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -510,11 +689,67 @@ const CommunityPage = () => {
               <span className="inline-block h-4 w-4 border-2 border-stone-300 dark:border-gray-500 border-t-transparent rounded-full animate-spin mr-2 align-[-2px]" />
               게시글을 불러오는 중이에요...
             </div>
-          ) : posts.length > 0 ? (
-            posts.map((post) => {
+          ) : hasVisiblePosts || hasUrgentSlot ? (
+            <>
+              {hasUrgentSlot && (
+                <section className="rounded-3xl border border-rose-200 dark:border-rose-800/50 bg-rose-50 dark:bg-rose-900/10 p-4 lg:p-5 shadow-sm">
+                  <div className="flex items-center gap-2 mb-3">
+                    <AlertCircle className="w-4 h-4 text-rose-500 animate-pulse" />
+                    <h3 className="text-sm font-extrabold text-rose-700 dark:text-rose-300">긴급/SOS (최근 2시간)</h3>
+                  </div>
+                  <div className="space-y-2">
+                    {urgentSlotPosts.map((post) => {
+                      const postRegionDongLabel = post.regUserRegionDongLabel || getRegionLabels(post.regUserRegionName).dongLabel;
+                      return (
+                        <button
+                          key={`urgent-slot-${post.id}`}
+                          type="button"
+                          onClick={() => handleOpenPost(post.id, post.boardSlug)}
+                          className="w-full text-left rounded-2xl border border-rose-200/80 dark:border-rose-800/40 bg-white/90 dark:bg-gray-800/70 px-3 py-2.5 hover:bg-white dark:hover:bg-gray-800 transition-colors"
+                        >
+                          <p className="text-sm font-bold text-stone-900 dark:text-gray-100 line-clamp-1">{post.title}</p>
+                          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-stone-500 dark:text-gray-400">
+                            <span>{formatRelativeTime(post.regDate)}</span>
+                            {postRegionDongLabel && (
+                              <>
+                                <span>•</span>
+                                <span className="inline-flex items-center gap-1">
+                                  <MapPin className="w-3 h-3 text-rose-400 dark:text-rose-500" />
+                                  {postRegionDongLabel}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+
+            {visiblePosts.map((post) => {
               const imageError = imageLoadErrorMap[String(post.id)];
               const hasThumbnail = Boolean(post.thumbnailUrl) && !imageError;
+              const hasThumbnailVariants = Boolean(
+                post.thumbnailAvifUrl || post.thumbnailWebpUrl || post.thumbnailJpegUrl || post.thumbnailPngUrl
+              );
+              const quotePreview = post.quotePreview;
+              const hasQuotePreview = Boolean(post.quoteOfItemId || quotePreview);
+              const quoteSourceId = quotePreview?.id || post.quoteOfItemId || null;
+              const canOpenQuoteSource = Boolean(quoteSourceId) && !quotePreview?.unavailable;
+              const hasQuoteThumbnail = Boolean(quotePreview?.thumbnailUrl);
+              const hasQuoteThumbnailVariants = Boolean(
+                quotePreview?.thumbnailAvifUrl
+                || quotePreview?.thumbnailWebpUrl
+                || quotePreview?.thumbnailJpegUrl
+                || quotePreview?.thumbnailPngUrl
+              );
               const postRegionDongLabel = post.regUserRegionDongLabel || getRegionLabels(post.regUserRegionName).dongLabel;
+              const postScopeBadge = getPostScopeBadgeMeta(post.postScope);
+              const normalizedCategory = String(post.category || '').toLowerCase();
+              const isPlaceReviewCategory = normalizedCategory === 'local_review' || normalizedCategory === 'hospital';
+              const placeName = typeof post.placeName === 'string' ? post.placeName.trim() : '';
+              const shouldShowPlaceBadge = isPlaceReviewCategory && Boolean(placeName);
 
               return (
                 <article
@@ -544,13 +779,13 @@ const CommunityPage = () => {
                         </div>
                         <div>
                           <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                            <span className="text-sm font-semibold text-stone-800 dark:text-gray-100">{post.regUserName || '알 수 없음'}</span>
                             {post.sameNeighborhood && (
                               <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-stone-900 dark:bg-amber-500 dark:text-gray-900 shadow-sm">
                                 <MapPin className="w-3 h-3" />
                                 인증이웃
                               </span>
                             )}
-                            <span className="text-sm font-semibold text-stone-800 dark:text-gray-100">{post.regUserName || '알 수 없음'}</span>
                             {post.regUserHonorNeighbor && (
                               <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-gradient-to-r from-amber-200 to-yellow-400 text-stone-900 shadow-sm">
                                 <Crown className="w-3 h-3 text-amber-700" />
@@ -577,63 +812,157 @@ const CommunityPage = () => {
                                 </span>
                               </>
                             )}
-                            {post.category === 'hospital' && post.placeName && (
+                            {shouldShowPlaceBadge && (
                               <>
                                 <span>•</span>
                                 <span className="inline-flex items-center gap-1 text-teal-600 dark:text-teal-400 font-medium bg-teal-50 dark:bg-teal-900/30 px-1.5 py-0.5 rounded-full">
-                                  🏥 {post.placeName}
+                                  <MapPin className="w-3 h-3" />
+                                  {placeName}
                                 </span>
                               </>
                             )}
                           </div>
                         </div>
                       </div>
-                      {post.category && (() => {
-                        const meta = categoryMeta[post.category];
-                        const Icon = meta?.icon || (post.category === 'hospital' ? Building2 : Coffee);
-                        const label = meta?.label || (post.category === 'hospital' ? '병원/기관' : post.category);
+                      <div className="flex items-center justify-end gap-1.5 flex-wrap shrink-0">
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full ${postScopeBadge.className}`}>
+                          <postScopeBadge.Icon className="w-3 h-3" strokeWidth={2.5} />
+                          {postScopeBadge.label}
+                        </span>
+                        {post.category && (() => {
+                          const meta = categoryMeta[post.category];
+                          const Icon = meta?.icon || (post.category === 'hospital' ? Building2 : Coffee);
+                          const label = meta?.label || (post.category === 'hospital' ? '병원/기관' : post.category);
 
-                        if (post.category === 'urgent') {
+                          if (post.category === 'urgent') {
+                            return (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full bg-rose-500 text-white shadow-[0_0_8px_rgba(244,63,94,0.6)] dark:shadow-[0_0_12px_rgba(244,63,94,0.5)]">
+                                <AlertCircle className="w-3 h-3" />
+                                긴급/SOS
+                              </span>
+                            );
+                          }
+
                           return (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full bg-rose-500 text-white shadow-[0_0_8px_rgba(244,63,94,0.6)] dark:shadow-[0_0_12px_rgba(244,63,94,0.5)]">
-                              <AlertCircle className="w-3 h-3" />
-                              긴급/SOS
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full ${['qna', 'local_gathering'].includes(post.category) ? 'bg-orange-400 text-white dark:bg-orange-500' :
+                              ['daily', 'local_review', 'hospital'].includes(post.category) ? 'bg-emerald-400 text-white dark:bg-emerald-500' :
+                                ['tip', 'info_share', 'local_info'].includes(post.category) ? 'bg-indigo-400 text-white dark:bg-indigo-500' :
+                                  ['item_review', 'local_share'].includes(post.category) ? 'bg-pink-400 text-white dark:bg-pink-500' :
+                                    'bg-stone-100 text-stone-600 dark:bg-gray-700 border border-stone-200 dark:text-gray-300'
+                              }`}>
+                              <Icon className="w-3 h-3" strokeWidth={2.5} />
+                              {label}
                             </span>
                           );
-                        }
-
-                        return (
-                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full ${['qna', 'local_gathering'].includes(post.category) ? 'bg-orange-400 text-white dark:bg-orange-500' :
-                            ['daily', 'local_review', 'hospital'].includes(post.category) ? 'bg-emerald-400 text-white dark:bg-emerald-500' :
-                              ['tip', 'info_share', 'local_info'].includes(post.category) ? 'bg-indigo-400 text-white dark:bg-indigo-500' :
-                                ['item_review', 'local_share'].includes(post.category) ? 'bg-pink-400 text-white dark:bg-pink-500' :
-                                  'bg-stone-100 text-stone-600 dark:bg-gray-700 border border-stone-200 dark:text-gray-300'
-                            }`}>
-                            <Icon className="w-3 h-3" strokeWidth={2.5} />
-                            {label}
-                          </span>
-                        );
-                      })()}
+                        })()}
+                      </div>
                     </div>
 
                     <div className="flex flex-col gap-3">
                       <div className="flex-1">
                         <h3 className="text-base md:text-lg lg:text-xl font-extrabold text-stone-900 dark:text-gray-100 mb-1.5 line-clamp-2 leading-snug tracking-tight">{post.title}</h3>
+                        {hasQuotePreview && (
+                          <div
+                            className={`mb-2 rounded-xl border border-stone-200/80 dark:border-gray-700/70 bg-stone-50/90 dark:bg-gray-800/70 p-2.5 ${canOpenQuoteSource ? 'cursor-pointer hover:bg-stone-100/90 dark:hover:bg-gray-700/70 transition-colors' : ''}`}
+                            role={canOpenQuoteSource ? 'button' : undefined}
+                            tabIndex={canOpenQuoteSource ? 0 : undefined}
+                            aria-label={canOpenQuoteSource ? '인용 원문 상세 보기' : undefined}
+                            onClick={canOpenQuoteSource ? (event) => handleOpenQuotedPost(event, quoteSourceId, post.boardSlug) : undefined}
+                            onKeyDown={canOpenQuoteSource ? (event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                handleOpenQuotedPost(event, quoteSourceId, post.boardSlug);
+                              }
+                            } : undefined}
+                          >
+                            {quotePreview?.unavailable ? (
+                              <p className="text-xs text-stone-500 dark:text-gray-400">원문을 볼 수 없어요.</p>
+                            ) : (
+                              <div className="space-y-1">
+                                <p className="text-[11px] font-semibold text-stone-500 dark:text-gray-400">
+                                  {quotePreview?.authorName || '원문 작성자'}
+                                </p>
+                                <p className="text-xs font-semibold text-stone-700 dark:text-gray-200 line-clamp-1">
+                                  {quotePreview?.title || '원문'}
+                                </p>
+                                {quotePreview?.content && (
+                                  <p className="text-[11px] text-stone-500 dark:text-gray-400 line-clamp-2">{quotePreview.content}</p>
+                                )}
+                                {hasQuoteThumbnail && (
+                                  <div className="mt-2 rounded-lg overflow-hidden border border-stone-200/80 dark:border-gray-700/70 bg-white/80 dark:bg-gray-900/30">
+                                    {hasQuoteThumbnailVariants ? (
+                                      <picture>
+                                        {quotePreview?.thumbnailAvifUrl && <source type="image/avif" srcSet={quotePreview.thumbnailAvifUrl} />}
+                                        {quotePreview?.thumbnailWebpUrl && <source type="image/webp" srcSet={quotePreview.thumbnailWebpUrl} />}
+                                        {quotePreview?.thumbnailJpegUrl && <source type="image/jpeg" srcSet={quotePreview.thumbnailJpegUrl} />}
+                                        {quotePreview?.thumbnailPngUrl && <source type="image/png" srcSet={quotePreview.thumbnailPngUrl} />}
+                                        <img
+                                          src={quotePreview.thumbnailUrl}
+                                          alt={`${quotePreview?.title || '원문'} 이미지`}
+                                          width={quotePreview?.thumbnailWidth || undefined}
+                                          height={quotePreview?.thumbnailHeight || undefined}
+                                          className="w-full max-h-48 object-cover"
+                                          loading="lazy"
+                                          decoding="async"
+                                          fetchPriority="low"
+                                          sizes="(max-width: 768px) 92vw, 640px"
+                                        />
+                                      </picture>
+                                    ) : (
+                                      <img
+                                        src={quotePreview.thumbnailUrl}
+                                        alt={`${quotePreview?.title || '원문'} 이미지`}
+                                        className="w-full max-h-48 object-cover"
+                                        loading="lazy"
+                                        decoding="async"
+                                        fetchPriority="low"
+                                      />
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         {post.content && (
                           <p className="text-sm md:text-[15px] lg:text-base text-stone-500 dark:text-gray-400 font-light line-clamp-3 leading-relaxed">{post.content}</p>
                         )}
                       </div>
                       {hasThumbnail && (
-                        <div className="w-full h-44 rounded-2xl overflow-hidden border border-stone-100 dark:border-gray-700">
-                          <img
-                            src={post.thumbnailUrl}
-                            alt={`${post.title || '게시글'} 첨부 이미지`}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                            onError={() => {
-                              setImageLoadErrorMap((prev) => ({ ...prev, [String(post.id)]: true }));
-                            }}
-                          />
+                        <div className="w-full aspect-square rounded-2xl overflow-hidden border border-stone-100 dark:border-gray-700">
+                          {hasThumbnailVariants ? (
+                            <picture>
+                              {post.thumbnailAvifUrl && <source type="image/avif" srcSet={post.thumbnailAvifUrl} />}
+                              {post.thumbnailWebpUrl && <source type="image/webp" srcSet={post.thumbnailWebpUrl} />}
+                              {post.thumbnailJpegUrl && <source type="image/jpeg" srcSet={post.thumbnailJpegUrl} />}
+                              {post.thumbnailPngUrl && <source type="image/png" srcSet={post.thumbnailPngUrl} />}
+                              <img
+                                src={post.thumbnailUrl}
+                                alt={`${post.title || '게시글'} 첨부 이미지`}
+                                width={post.thumbnailWidth || undefined}
+                                height={post.thumbnailHeight || undefined}
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                                decoding="async"
+                                fetchPriority="low"
+                                sizes="(max-width: 768px) 92vw, 640px"
+                                onError={() => {
+                                  setImageLoadErrorMap((prev) => ({ ...prev, [String(post.id)]: true }));
+                                }}
+                              />
+                            </picture>
+                          ) : (
+                            <img
+                              src={post.thumbnailUrl}
+                              alt={`${post.title || '게시글'} 첨부 이미지`}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                              decoding="async"
+                              fetchPriority="low"
+                              onError={() => {
+                                setImageLoadErrorMap((prev) => ({ ...prev, [String(post.id)]: true }));
+                              }}
+                            />
+                          )}
                         </div>
                       )}
                       {!hasThumbnail && post.hasFile && (
@@ -651,19 +980,61 @@ const CommunityPage = () => {
                       disabled={Boolean(likeLoading[post.id])}
                       aria-busy={Boolean(likeLoading[post.id])}
                       aria-label={`${likedMap[post.id] ? '공감 취소' : '공감'}: ${post.title || '게시글'}`}
-                      className={`flex items-center gap-1.5 text-xs font-normal transition-colors disabled:opacity-60 ${likedMap[post.id] ? 'text-rose-500 dark:text-rose-400' : 'hover:text-stone-500 dark:hover:text-gray-300'
+                      className={`flex items-center gap-1.5 text-sm font-normal transition-colors disabled:opacity-60 ${likedMap[post.id] ? 'text-rose-500 dark:text-rose-400' : 'hover:text-stone-500 dark:hover:text-gray-300'
                         }`}
                     >
-                      <Heart className={`w-4 h-4 ${likedMap[post.id] ? 'fill-rose-500 dark:fill-rose-400' : ''}`} strokeWidth={1.5} />
+                      <Heart className={`w-[18px] h-[18px] ${likedMap[post.id] ? 'fill-rose-500 dark:fill-rose-400' : ''}`} strokeWidth={1.5} />
                       {likeCounts[post.id] ?? post.likeCount ?? 0}
                     </button>
-                    <div className="flex items-center gap-1.5 text-xs font-normal">
-                      <MessageSquare className="w-4 h-4" strokeWidth={1.5} /> {post.commentCount ?? 0}
+                    <div className="relative" data-repost-menu>
+                      <button
+                        type="button"
+                        data-repost-trigger
+                        onClick={() => setOpenRepostMenuId((prev) => (prev === post.id ? null : post.id))}
+                        disabled={Boolean(repostLoading[post.id])}
+                        aria-busy={Boolean(repostLoading[post.id])}
+                        className={`flex items-center gap-1.5 text-sm font-normal transition-colors disabled:opacity-60 ${
+                          repostedMap[post.id] ? 'text-emerald-600 dark:text-emerald-400' : 'hover:text-stone-500 dark:hover:text-gray-300'
+                        }`}
+                      >
+                        <Repeat2 className="w-[18px] h-[18px]" strokeWidth={1.75} />
+                        {repostCounts[post.id] ?? post.repostCount ?? 0}
+                      </button>
+                      {openRepostMenuId === post.id && (
+                        <div className="absolute left-0 top-full mt-2 z-20 w-36 overflow-hidden rounded-xl border border-stone-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setOpenRepostMenuId(null);
+                              await handleToggleRepost(post.id);
+                            }}
+                            className="w-full px-3 py-2.5 text-left text-xs font-semibold text-stone-700 dark:text-gray-100 hover:bg-stone-50 dark:hover:bg-gray-700 flex items-center gap-2"
+                          >
+                            <Repeat2 className="w-3.5 h-3.5" />
+                            {repostedMap[post.id] ? '재게시 취소' : '재게시'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenRepostMenuId(null);
+                              navigate(`/community/write?quoteOf=${post.id}&locationScope=${post.postScope || 'all'}`);
+                            }}
+                            className="w-full px-3 py-2.5 text-left text-xs font-semibold text-stone-700 dark:text-gray-100 hover:bg-stone-50 dark:hover:bg-gray-700 flex items-center gap-2 border-t border-stone-100 dark:border-gray-700"
+                          >
+                            <PenLine className="w-3.5 h-3.5" />
+                            인용하기
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-sm font-normal">
+                      <MessageSquare className="w-[18px] h-[18px]" strokeWidth={1.5} /> {post.commentCount ?? 0}
                     </div>
                   </div>
                 </article>
               );
-            })
+            })}
+            </>
           ) : queryParam.trim() ? (
             <div className="py-20 text-center text-stone-400 dark:text-gray-500">
               <p className="mb-2">

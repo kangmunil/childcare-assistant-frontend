@@ -1,6 +1,10 @@
 import { supabase } from '../api/supabase';
+import useStore from '../store/useStore';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const DEV_BYPASS_TOKEN = typeof import.meta.env.VITE_DEV_BYPASS_TOKEN === 'string'
+  ? import.meta.env.VITE_DEV_BYPASS_TOKEN.trim()
+  : '';
 
 /**
  * Supabase 토큰을 자동으로 첨부하는 API 클라이언트
@@ -11,6 +15,7 @@ const api = {
    */
   async request(endpoint, options = {}) {
     const { data: { session } } = await supabase.auth.getSession();
+    const storeToken = useStore.getState().token;
 
     const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
 
@@ -25,9 +30,12 @@ const api = {
       delete headers['content-type'];
     }
 
-    // 세션이 있으면 Authorization 헤더 추가
-    if (session?.access_token) {
-      headers['Authorization'] = `Bearer ${session.access_token}`;
+    // 기본은 Supabase 세션 토큰, 없으면 Zustand 토큰으로 fallback
+    const accessToken = session?.access_token
+      || (typeof storeToken === 'string' && storeToken.trim() ? storeToken.trim() : null)
+      || (DEV_BYPASS_TOKEN || null);
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
     }
 
     const response = await fetch(`${API_BASE_URL}/api${endpoint}`, {

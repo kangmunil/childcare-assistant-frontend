@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { AlertCircle } from 'lucide-react';
 import api from '../lib/api';
 import useStore from '../store/useStore';
 
@@ -41,26 +42,32 @@ const CommunityShell = () => {
   }, [location.pathname]);
 
   const {
-    data: popularPosts = [],
+    data: highlights = { popularPosts: [], urgentPosts: [] },
     isFetching
   } = useQuery({
     queryKey: ['community', 'highlights', locationScope],
     queryFn: async ({ signal }) => {
       const params = new URLSearchParams({
         page: '0',
-        size: '1',
+        size: '3',
         includeHighlights: 'true',
         locationScope
       });
       const response = await api.get(`/boards/community/items?${params.toString()}`, { signal });
       const data = response?.data || response || {};
-      return Array.isArray(data.popularItems) ? data.popularItems : [];
+      return {
+        popularPosts: Array.isArray(data.popularItems) ? data.popularItems : [],
+        urgentPosts: Array.isArray(data.urgentItems) ? data.urgentItems : []
+      };
     },
     enabled: !isNeighborScopeBlocked,
     staleTime: 1000 * 60,
     gcTime: 1000 * 60 * 10
   });
   const isPopularLoading = isFetching;
+  const popularPosts = highlights.popularPosts;
+  const urgentPosts = highlights.urgentPosts;
+  const showUrgentBox = locationScope === 'neighbor';
 
   return (
     <div ref={containerRef} className="px-4 md:px-6 lg:px-8">
@@ -71,6 +78,41 @@ const CommunityShell = () => {
 
         <aside className="hidden xl:block relative xl:w-[280px]">
           <div className="sticky top-6">
+            {showUrgentBox && (
+              <div className="bg-rose-50 dark:bg-rose-900/10 rounded-3xl border border-rose-200 dark:border-rose-800/40 p-5 mb-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <AlertCircle className="w-4 h-4 text-rose-500 animate-pulse" />
+                  <h3 className="text-sm font-bold text-rose-700 dark:text-rose-300">긴급/SOS</h3>
+                </div>
+                {isPopularLoading ? (
+                  <div className="space-y-3 animate-pulse">
+                    {Array.from({ length: 3 }).map((_, index) => (
+                      <div
+                        key={`urgent-skeleton-${index}`}
+                        className="h-3 w-full rounded-full bg-rose-200/80 dark:bg-rose-900/40"
+                      />
+                    ))}
+                  </div>
+                ) : urgentPosts.length > 0 ? (
+                  <div className="space-y-3">
+                    {urgentPosts.map((post) => (
+                      <button
+                        key={`urgent-${post.id}`}
+                        onClick={() => navigate(`/community/${post.id}${location.search || ''}`)}
+                        className="w-full text-left text-sm text-stone-700 dark:text-gray-200 hover:text-rose-600 dark:hover:text-rose-300 transition-colors"
+                      >
+                        <span className="line-clamp-2">{post.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-rose-600/80 dark:text-rose-300/70">
+                    아직 긴급 글이 없어요.
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="bg-white dark:bg-gray-800 rounded-3xl border border-stone-100 dark:border-gray-700 p-5">
               <h3 className="text-sm font-bold text-stone-800 dark:text-gray-100 mb-3">인기글</h3>
               {isPopularLoading ? (

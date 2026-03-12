@@ -1,7 +1,22 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { X, Search, MapPin, Loader2 } from 'lucide-react';
 import api from '../lib/api';
-import useStore from '../store/useStore';
+
+const dedupePlaces = (baseList, nextList) => {
+    const merged = [...baseList];
+    const seen = new Set(
+        baseList.map((place) => String(place?.id || `${place?.place_name || ''}:${place?.x || ''}:${place?.y || ''}`)),
+    );
+
+    nextList.forEach((place) => {
+        const key = String(place?.id || `${place?.place_name || ''}:${place?.x || ''}:${place?.y || ''}`);
+        if (seen.has(key)) return;
+        seen.add(key);
+        merged.push(place);
+    });
+
+    return merged;
+};
 
 const PlaceSearchModal = ({ isOpen, onClose, onSelect }) => {
     const [query, setQuery] = useState('');
@@ -10,42 +25,79 @@ const PlaceSearchModal = ({ isOpen, onClose, onSelect }) => {
     const [error, setError] = useState('');
     const [page, setPage] = useState(1);
     const [isEnd, setIsEnd] = useState(true);
-    const { user } = useStore();
+    const [hasSearched, setHasSearched] = useState(false);
     const observerRef = useRef();
+    const latestRequestTokenRef = useRef(0);
 
-    const searchPlaces = async (searchQuery, pageNum = 1, append = false) => {
-        if (!searchQuery.trim()) return;
+    const resetSearchState = useCallback(() => {
+        setQuery('');
+        setPlaces([]);
+        setIsLoading(false);
+        setError('');
+        setPage(1);
+        setIsEnd(true);
+        setHasSearched(false);
+    }, []);
+
+    const searchPlaces = useCallback(async (searchQuery, pageNum = 1, append = false) => {
+        const trimmedQuery = String(searchQuery || '').trim();
+        if (!trimmedQuery) {
+            setPlaces([]);
+            setPage(1);
+            setIsEnd(true);
+            setHasSearched(false);
+            setError('검색어를 입력해주세요.');
+            return;
+        }
+
+        const requestToken = latestRequestTokenRef.current + 1;
+        latestRequestTokenRef.current = requestToken;
         setIsLoading(true);
         setError('');
+        if (pageNum === 1) {
+            setHasSearched(false);
+        }
 
         try {
-            // Use user's current location as center preference if available
-            const params = new URLSearchParams({ query: searchQuery.trim(), page: pageNum });
-            if (user?.lat && user?.lng) {
-                params.set('lat', user.lat);
-                params.set('lng', user.lng);
-                params.set('radius', 5000); // 5km radius preference
-            }
+            // Always search globally.
+            // Nearby bias (lat/lng + radius) can over-filter address queries
+            // and return empty results for valid distant locations.
+            const params = new URLSearchParams({ query: trimmedQuery, page: String(pageNum) });
 
             const response = await api.get(`/geo/search?${params.toString()}`);
+            if (requestToken !== latestRequestTokenRef.current) return;
+
             const data = response?.data || response;
-            const documents = data?.documents || [];
+            const documents = Array.isArray(data?.documents) ? data.documents : [];
             const meta = data?.meta || { is_end: true };
 
             if (append) {
-                setPlaces(prev => [...prev, ...documents]);
+                setPlaces((prev) => dedupePlaces(prev, documents));
             } else {
                 setPlaces(documents);
             }
-            setIsEnd(meta.is_end);
+            setIsEnd(Boolean(meta.is_end));
             setPage(pageNum);
+            setHasSearched(true);
         } catch (err) {
+            if (requestToken !== latestRequestTokenRef.current) return;
             console.error(err);
             setError('장소를 검색하는 중 오류가 발생했습니다.');
         } finally {
-            setIsLoading(false);
+            if (requestToken === latestRequestTokenRef.current) {
+                setIsLoading(false);
+            }
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        if (isOpen) {
+            resetSearchState();
+            return;
+        }
+        // 모달이 닫힌 뒤 도착하는 이전 요청 응답은 무시한다.
+        latestRequestTokenRef.current += 1;
+    }, [isOpen, resetSearchState]);
 
     const handleSearch = (e) => {
         e.preventDefault();
@@ -57,14 +109,12 @@ const PlaceSearchModal = ({ isOpen, onClose, onSelect }) => {
         if (target.isIntersecting && !isLoading && !isEnd) {
             searchPlaces(query, page + 1, true);
         }
-    }, [isLoading, isEnd, query, page]);
+    }, [isLoading, isEnd, query, page, searchPlaces]);
 
     useEffect(() => {
         const observer = new IntersectionObserver(handleObserver, { rootMargin: '20px' });
         if (observerRef.current) observer.observe(observerRef.current);
-        return () => {
-            if (observerRef.current) observer.unobserve(observerRef.current);
-        };
+        return () => observer.disconnect();
     }, [handleObserver]);
 
     // Handle Enter key in input
@@ -94,16 +144,28 @@ const PlaceSearchModal = ({ isOpen, onClose, onSelect }) => {
                     <div className="relative">
                         <input
                             type="text"
-                            placeholder="병원, 약국 등 장소명 입력"
+                            placeholder="어린이집, 놀이터, 병원 등 장소명 입력"
                             value={query}
-                            onChange={(e) => setQuery(e.target.value)}
+                            onChange={(e) => {
+                                const nextValue = e.target.value;
+                                setQuery(nextValue);
+                                if (!nextValue.trim()) {
+                                    setError('');
+                                    setPlaces([]);
+                                    setPage(1);
+                                    setIsEnd(true);
+                                    setHasSearched(false);
+                                }
+                            }}
                             onKeyDown={handleKeyDown}
                             autoFocus
                             className="w-full bg-white dark:bg-gray-800 border border-stone-200 dark:border-gray-700 rounded-2xl py-3 pl-4 pr-12 text-sm text-stone-800 dark:text-gray-100 placeholder:text-stone-400 focus:outline-none focus:border-amber-400"
                         />
                         <button
                             onClick={handleSearch}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-stone-400 hover:text-amber-500"
+                            disabled={isLoading}
+                            aria-label="장소 검색"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-stone-400 hover:text-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <Search className="w-5 h-5" />
                         </button>
@@ -116,7 +178,7 @@ const PlaceSearchModal = ({ isOpen, onClose, onSelect }) => {
                         <div className="p-8 text-center text-rose-500 text-sm">{error}</div>
                     )}
 
-                    {!error && places.length === 0 && !isLoading && query && (
+                    {!error && places.length === 0 && !isLoading && hasSearched && (
                         <div className="p-8 text-center text-stone-400 dark:text-gray-500 text-sm">
                             검색 결과가 없습니다.
                         </div>
