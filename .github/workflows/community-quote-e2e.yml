@@ -7,10 +7,7 @@ on:
       - "src/pages/PostDetailPage.jsx"
       - "src/pages/PostWritePage.jsx"
       - "tests/community-quote-navigation.ci.mjs"
-      - "scripts/community-quote-navigation-e2e.sh"
-      - "scripts/run-community-quote-e2e-local.sh"
-      - "scripts/community-policy-e2e.sh"
-      - "scripts/run-community-policy-e2e-local.sh"
+      - "tests/contracts/communityQuoteContract.mjs"
       - "package.json"
       - ".github/workflows/community-quote-e2e.yml"
   push:
@@ -21,10 +18,7 @@ on:
       - "src/pages/PostDetailPage.jsx"
       - "src/pages/PostWritePage.jsx"
       - "tests/community-quote-navigation.ci.mjs"
-      - "scripts/community-quote-navigation-e2e.sh"
-      - "scripts/run-community-quote-e2e-local.sh"
-      - "scripts/community-policy-e2e.sh"
-      - "scripts/run-community-policy-e2e-local.sh"
+      - "tests/contracts/communityQuoteContract.mjs"
       - "package.json"
       - ".github/workflows/community-quote-e2e.yml"
 
@@ -36,31 +30,17 @@ jobs:
       DEV_BYPASS_TOKEN: dev-e2e-token
       API_BASE_URL: http://127.0.0.1:8082
       FRONT_URL: http://127.0.0.1:5174
-      BACKEND_PORT: "8082"
       FRONTEND_PORT: "5174"
 
     steps:
       - name: Checkout frontend
         uses: actions/checkout@v4
 
-      - name: Checkout backend
-        uses: actions/checkout@v4
-        with:
-          repository: kangmunil/childcare-assistant-backend
-          path: childcare-assistant-backend
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
-
-      - name: Setup JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: gradle
 
       - name: Install frontend deps
         run: npm ci
@@ -70,53 +50,41 @@ jobs:
           npm install --no-save playwright@1.53.2
           npx playwright install --with-deps chromium
 
-      - name: Start backend
-        run: |
-          cd childcare-assistant-backend
-          AUTH_DEV_BYPASS_TOKEN="${DEV_BYPASS_TOKEN}" \
-          SERVER_PORT="${BACKEND_PORT}" \
-          ./gradlew bootRun > /tmp/community-quote-backend.log 2>&1 &
-          echo $! > /tmp/community-quote-backend.pid
-
       - name: Start frontend
         run: |
           VITE_API_BASE_URL="${API_BASE_URL}" \
+          VITE_DEV_BYPASS_TOKEN="${DEV_BYPASS_TOKEN}" \
           npm run dev -- --host 127.0.0.1 --port "${FRONTEND_PORT}" > /tmp/community-quote-frontend.log 2>&1 &
           echo $! > /tmp/community-quote-frontend.pid
 
-      - name: Wait for services
+      - name: Wait for frontend
         run: |
-          for i in {1..90}; do
-            if curl -sS -m 3 "${API_BASE_URL}/api/members/me" -H "Authorization: Bearer ${DEV_BYPASS_TOKEN}" | grep -q '"status":"success"'; then
-              break
-            fi
-            sleep 2
-          done
-
+          frontend_ready=0
           for i in {1..90}; do
             if curl -sS -m 3 "${FRONT_URL}" >/dev/null; then
+              frontend_ready=1
               break
             fi
             sleep 2
           done
+          if [ "${frontend_ready}" -ne 1 ]; then
+            echo "frontend failed to become ready at ${FRONT_URL}"
+            tail -n 200 /tmp/community-quote-frontend.log || true
+            exit 1
+          fi
 
-      - name: Run quote navigation e2e
+      - name: Run quote navigation contract test
         run: npm run test:community-quote-e2e:ci
 
-      - name: Dump logs on failure
+      - name: Dump frontend logs on failure
         if: failure()
         run: |
-          echo "=== backend log ==="
-          tail -n 200 /tmp/community-quote-backend.log || true
           echo "=== frontend log ==="
           tail -n 200 /tmp/community-quote-frontend.log || true
 
-      - name: Stop services
+      - name: Stop frontend
         if: always()
         run: |
           if [ -f /tmp/community-quote-frontend.pid ]; then
             kill "$(cat /tmp/community-quote-frontend.pid)" || true
-          fi
-          if [ -f /tmp/community-quote-backend.pid ]; then
-            kill "$(cat /tmp/community-quote-backend.pid)" || true
           fi
